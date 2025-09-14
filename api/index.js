@@ -141,14 +141,33 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
+// 404 handler - use correct Express pattern
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     error: 'Endpoint not found',
     path: req.originalUrl,
-    method: req.method
+    method: req.method,
+    availableEndpoints: {
+      health: 'GET /health',
+      root: 'GET /',
+      createBooking: 'POST /api/bookings/create',
+      addUsers: 'POST /api/bookings/add-users',
+      createPayment: 'POST /api/bookings/create-payment',
+      confirmPayment: 'POST /api/bookings/confirm-payment',
+      testDb: 'GET /api/test-db'
+    }
   });
 });
 
 export default app;
+
+// For local testing and Railway deployment
+if (process.env.NODE_ENV !== 'test') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Railway Serverless API running on port ${PORT}`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log(`📋 API endpoints: http://localhost:${PORT}/api/`);
+  });
+}
