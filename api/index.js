@@ -111,7 +111,7 @@ app.post('/api/bookings/create', async (req, res) => {
 
 app.post('/api/bookings/add-users', async (req, res) => {
   try {
-    await bookingController.addUsers(req, res);
+    await bookingController.addUserDetails(req, res);
   } catch (error) {
     console.error('Add users error:', error);
     res.status(500).json({ success: false, error: error.message });

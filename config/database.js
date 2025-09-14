@@ -33,13 +33,14 @@ if (!process.env.DATABASE_URL) {
       rejectUnauthorized: false,
       sslmode: 'require'
     } : undefined,
-    max: 10, // Reduced for Railway serverless
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 15000, // Increased timeout
-    statement_timeout: 30000,
-    query_timeout: 30000,
+    max: 5, // Reduced for Railway serverless
+    idleTimeoutMillis: 10000, // Reduced for serverless
+    connectionTimeoutMillis: 5000, // Faster fail for serverless
+    statement_timeout: 10000,
+    query_timeout: 10000,
     // Force IPv4 connection
     family: 4,
+    keepAlive: false, // Disable for serverless
   };
 
   console.log('� Attempting database connection to:', `${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
@@ -61,6 +62,34 @@ if (!process.env.DATABASE_URL) {
       return true;
     } catch (err) {
       console.error('❌ Database connection failed:', err.message);
+      
+      // If IPv6 issue, try alternative connection method
+      if (err.message.includes('ENETUNREACH') && err.address && err.address.includes(':')) {
+        console.log('🔄 Detected IPv6 issue, trying alternative connection...');
+        
+        try {
+          // Try with connectionString but with additional options
+          const alternativePool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: { rejectUnauthorized: false },
+            max: 1,
+            connectionTimeoutMillis: 5000,
+            statement_timeout: 10000,
+          });
+          
+          const altClient = await alternativePool.connect();
+          const altResult = await altClient.query('SELECT NOW()');
+          console.log('✅ Alternative connection successful:', altResult.rows[0].now);
+          altClient.release();
+          
+          // Replace the main pool with the working one
+          pool = alternativePool;
+          return true;
+        } catch (altErr) {
+          console.error('❌ Alternative connection also failed:', altErr.message);
+        }
+      }
+      
       return false;
     }
   };
