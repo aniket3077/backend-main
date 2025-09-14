@@ -16,19 +16,33 @@ if (!process.env.DATABASE_URL) {
   query = mockQuery;
   testConnection = mockTestConnection;
 } else {
-  // Create PostgreSQL connection pool with optional SSL
+  // Create PostgreSQL connection pool with Supabase-optimized settings
   const sslEnabled = String(process.env.PG_SSL || 'true').toLowerCase() !== 'false';
   
+  // Parse DATABASE_URL to get individual components and force IPv4
+  const dbUrl = new URL(process.env.DATABASE_URL);
+  
   const poolConfig = {
-    connectionString: process.env.DATABASE_URL,
+    // Use individual connection parameters instead of connectionString to avoid IPv6 issues
+    host: dbUrl.hostname,
+    port: parseInt(dbUrl.port) || 5432,
+    database: dbUrl.pathname.slice(1), // Remove leading slash
+    user: dbUrl.username,
+    password: dbUrl.password,
     ssl: sslEnabled ? { 
       rejectUnauthorized: false,
       sslmode: 'require'
     } : undefined,
-    max: 20, // maximum number of clients in the pool
-    idleTimeoutMillis: 30000, // how long a client is allowed to remain idle
-    connectionTimeoutMillis: 10000, // how long to wait when connecting a client
+    max: 10, // Reduced for Railway serverless
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 15000, // Increased timeout
+    statement_timeout: 30000,
+    query_timeout: 30000,
+    // Force IPv4 connection
+    family: 4,
   };
+
+  console.log('� Attempting database connection to:', `${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
 
   pool = new Pool(poolConfig);
 
