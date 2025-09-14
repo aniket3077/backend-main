@@ -8,7 +8,8 @@
     "dev": "node server.js",
     "prod": "NODE_ENV=production node server.js",
     "test-cloudinary": "node test-cloudinary.js",
-    "vercel-build": "echo 'Build completed'"
+    "vercel-build": "echo 'Build completed'",
+    "netlify-build": "npm install && echo 'Netlify build completed'"
   },
   "keywords": [],
   "author": "",
