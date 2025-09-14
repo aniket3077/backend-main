@@ -15,21 +15,47 @@
 [build.processing]
   skip_processing = true
 
-# Redirect API routes to functions
+# Redirect API routes to specific functions
 [[redirects]]
-  from = "/api/bookings/*"
-  to = "/.netlify/functions/bookings/:splat"
+  from = "/api/health"
+  to = "/.netlify/functions/health"
   status = 200
 
 [[redirects]]
-  from = "/api/qr/*"  
-  to = "/.netlify/functions/qr/:splat"
+  from = "/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings/create"
+  to = "/.netlify/functions/create-booking"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings/create-payment"
+  to = "/.netlify/functions/create-payment"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings/add-users"
+  to = "/.netlify/functions/bookings"
+  status = 200
+  
+[[redirects]]
+  from = "/api/bookings/confirm-payment"
+  to = "/.netlify/functions/bookings"
+  status = 200
+
+# Catch-all for other API routes
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/bookings"
   status = 200
 
 # Headers for CORS
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
-    Access-Control-Allow-Origin = "https://malangevents.com"
+    Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Headers = "Content-Type, Authorization"
     Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"

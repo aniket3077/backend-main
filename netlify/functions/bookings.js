@@ -1,10 +1,13 @@
-const { createBooking, createPayment, confirmPayment, addUsers } = require('../../controllers/bookingController');
+import { createBooking, createPayment, confirmPayment, addUsers } from '../../controllers/bookingController.js';
 
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
+  console.log('Function called with path:', event.path);
+  console.log('Method:', event.httpMethod);
+  
   // Enable CORS
   const headers = {
-    'Access-Control-Allow-Origin': 'https://malangevents.com',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   };
 
@@ -18,7 +21,8 @@ exports.handler = async (event, context) => {
   }
 
   // Parse the path to determine which booking function to call
-  const path = event.path.replace('/.netlify/functions/bookings', '');
+  const path = event.path.replace('/.netlify/functions/bookings', '') || event.rawUrl?.split('/bookings')[1] || '';
+  console.log('Parsed path:', path);
   
   // Create mock req/res objects for Express compatibility
   const req = {
