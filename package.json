@@ -9,7 +9,9 @@
     "prod": "NODE_ENV=production node server.js",
     "test-cloudinary": "node test-cloudinary.js",
     "vercel-build": "echo 'Build completed'",
-    "netlify-build": "npm install && echo 'Netlify build completed'"
+    "netlify-build": "npm install && echo 'Netlify build completed'",
+    "railway-build": "npm install",
+    "railway-start": "node server.js"
   },
   "keywords": [],
   "author": "",
