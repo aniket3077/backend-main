@@ -28,6 +28,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001', 
   'http://localhost:5173',
+  'http://localhost:5174',
   'http://localhost:19006',
   'exp://192.168.39.39:8081',
   'exp://10.0.2.2:8081',
@@ -38,7 +39,9 @@ const allowedOrigins = [
   'exp://192.168.162.189:19000',
   'exp://192.168.197.189:8081',
   'http://192.168.197.189:8081',
-  // Production origins (will be added after deployment)
+  // Production origins
+  'https://malangevents.com',
+  'https://www.malangevents.com',
   process.env.FRONTEND_URL,
   process.env.NETLIFY_URL,
   // Netlify preview URLs pattern
