@@ -708,14 +708,15 @@ async function sendTicketNotifications(booking_id, payment_id) {
         }
         
         // Handle regular individual tickets (excluding couple and family since they're already converted)
-        if (originalPassDetails && originalPassDetails.passes) {
+        if (originalPassDetails && originalPassDetails.original_passes) {
           console.log('🎫 Adding regular individual tickets to multi-page PDF');
           
           let ticketIndex = 0;
           // Skip couple and family in individual ticket generation since they're already handled above
           const skipTypes = ['couple', 'family'];
           
-          for (const [passType, count] of Object.entries(originalPassDetails.passes)) {
+          // Use original_passes instead of processed passes to avoid double counting
+          for (const [passType, count] of Object.entries(originalPassDetails.original_passes)) {
             if (skipTypes.includes(passType)) {
               continue; // Skip couple and family - they're handled above
             }

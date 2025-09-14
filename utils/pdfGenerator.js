@@ -13,19 +13,19 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
       const safeName = (name ?? "Guest").toString();
       const safePassType = (pass_type ?? "Standard Pass").toString();
       const safeDate = date ?? new Date().toISOString();
-      const safeVenue = venue ?? "Event Ground, Malang";
+      const safeVenue = venue ?? "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
 
-      // Color coding based on pass type - Updated scheme
+      // Color coding based on pass type - Enhanced scheme
       const getPassTypeColor = (passType) => {
         const type = passType.toLowerCase();
         switch (type) {
-          case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' }; // Pink for female
-          case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' }; // White for male
-          case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' }; // Purple for couple
-          case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' }; // Green for family
-          case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' }; // Blue for group
-          case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' }; // Yellow for kids
-          default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' }; // Default orange
+          case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
+          case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
+          case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
+          case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
+          case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
+          case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
+          default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
         }
       };
 
@@ -76,7 +76,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
 
         // Color coding based on pass type
         const getPassTypeColor = (passType) => {
-          const type = passType.toLowerCase();
+          const type = (passType || '').toString().toLowerCase();
           switch (type) {
             case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
             case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
@@ -88,7 +88,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
           }
         };
 
-        const passTypeColors = getPassTypeColor(ticketData.pass_type || 'female');
+        const passTypeColors = getPassTypeColor(ticketData.pass_type);
 
         await generateSingleTicketPage(doc, {
           name: ticketData.name || "Guest",
@@ -97,7 +97,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
           qrCode: ticketData.qrCode,
           booking_id: ticketData.booking_id,
           ticket_number: ticketData.ticket_number,
-          venue: ticketData.venue || "Event Ground, Malang",
+          venue: ticketData.venue || "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar",
           passTypeColors
         });
       }
@@ -117,7 +117,7 @@ async function generateSingleTicketPage(doc, ticketData) {
     const safeName = name || "Guest";
     const safeDate = date || new Date().toISOString();
     const safePassType = pass_type || "Standard Pass";
-    const safeVenue = venue || "Event Ground, Malang";
+    const safeVenue = venue || "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
 
     // Background - Rich gradient effect
     doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
@@ -146,30 +146,65 @@ async function generateSingleTicketPage(doc, ticketData) {
        .fill()
        .fillOpacity(1);
 
-    // Event title
+    // Download and add logo with fallback
     let yPos = 45;
-    doc.fontSize(24)
-       .fillColor('#ffffff')
-       .font('Helvetica-Bold')
-       .text('MALANG RAS DANDIYA 2025', 45, yPos + 20, {
-         align: 'center',
-         width: 330
-       });
-    
-    doc.fontSize(14)
-       .fillColor('#ffd700')
-       .text('Official Entry Pass', 45, yPos + 55, {
-         align: 'center',
-         width: 330
-       });
+    try {
+      const logoResponse = await axios.get('https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG', {
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      const logoBuffer = Buffer.from(logoResponse.data, 'binary');
+      
+      // Logo positioning
+      doc.image(logoBuffer, 50, yPos, { width: 80, height: 80 });
+      
+      // Event title with logo
+      doc.fontSize(22)
+         .fillColor('#ffffff')
+         .font('Helvetica-Bold')
+         .text('MALANG RAS DANDIYA 2025', 140, yPos + 10, {
+           width: 230,
+           align: 'center'
+         });
+      
+      doc.fontSize(14)
+         .fillColor('#ffd700')
+         .font('Helvetica')
+         .text('', 140, yPos + 40, {
+           width: 230,
+           align: 'center'
+         });
+         
+    } catch (logoErr) {
+      console.warn('Logo download failed, using text header:', logoErr.message);
+      
+      // Fallback header without logo
+      doc.fontSize(24)
+         .fillColor('#ffffff')
+         .font('Helvetica-Bold')
+         .text('MALANG RAS DANDIYA 2025', 45, yPos + 20, {
+           align: 'center',
+           width: 330
+         });
+      
+      doc.fontSize(14)
+         .fillColor('#ffd700')
+         .text('Official Entry Pass', 45, yPos + 55, {
+           align: 'center',
+           width: 330
+         });
+    }
 
-    // Main content background
-    yPos = 160;
-    doc.rect(35, yPos, 350, 280)
+    // Main content background - optimized sizing
+    yPos = 150;
+    doc.rect(35, yPos, 350, 360)
        .fillColor('#ffffff')
        .fill();
 
-    // Guest Name Section
+    // Guest Name Section with enhanced styling
     yPos += 25;
     doc.rect(45, yPos, 330, 50)
        .fillColor('#fff8f0')
@@ -192,15 +227,18 @@ async function generateSingleTicketPage(doc, ticketData) {
        .font('Helvetica-Bold')
        .text('EVENT DATE', 55, yPos);
     
+    const eventDate = new Date(safeDate);
+    const formattedDate = eventDate.toLocaleDateString('en-IN', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
     doc.font('Helvetica')
        .fontSize(16)
        .fillColor('#1a1a2e')
-       .text(new Date(safeDate).toLocaleDateString('en-IN', {
-         weekday: 'long',
-         year: 'numeric',
-         month: 'long',
-         day: 'numeric'
-       }), 55, yPos + 18);
+       .text(formattedDate, 55, yPos + 18);
 
     // Pass Type Section with Color Indicator
     yPos += 50;
@@ -230,7 +268,7 @@ async function generateSingleTicketPage(doc, ticketData) {
          align: 'center'
        });
 
-    // Venue Section
+    // Venue Section with proper line breaks
     yPos += 50;
     doc.fontSize(12)
        .fillColor(passTypeColors.primary)
@@ -238,12 +276,17 @@ async function generateSingleTicketPage(doc, ticketData) {
        .text('VENUE', 55, yPos);
     
     doc.font('Helvetica')
-       .fontSize(14)
+       .fontSize(13)
        .fillColor('#1a1a2e')
-       .text(safeVenue, 55, yPos + 18);
+       .text('Regal Lawns, Near Deolai Chowk', 55, yPos + 18);
+    
+    doc.font('Helvetica')
+       .fontSize(13)
+       .fillColor('#1a1a2e')
+       .text('Beed Bypass, Chhatrapati Sambhajinagar', 55, yPos + 35);
 
     // Booking Details
-    yPos += 45;
+    yPos += 60;
     doc.fontSize(10)
        .fillColor('#666666')
        .font('Helvetica')
@@ -260,25 +303,71 @@ async function generateSingleTicketPage(doc, ticketData) {
        .font('Helvetica-Bold')
        .text('SCAN FOR ENTRY', 45, yPos + 15, { align: 'center', width: 330 });
 
-    // Handle QR code
+    // Handle QR code with enhanced error handling
     const qrYPos = yPos + 40;
     try {
       let qrBuffer;
       
       if (qrCode) {
-        // Generate QR code buffer from data
-        const ticketData = JSON.stringify({
-          booking_id,
-          ticket_number,
-          pass_type,
+        if (qrCode.startsWith('http')) {
+          // Download QR from URL
+          console.log('Downloading QR code from URL:', qrCode);
+          try {
+            const response = await axios.get(qrCode, {
+              responseType: 'arraybuffer',
+              timeout: 10000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
+            qrBuffer = Buffer.from(response.data, 'binary');
+          } catch (downloadErr) {
+            console.warn('Failed to download QR code, generating new one:', downloadErr.message);
+            const qrData = JSON.stringify({
+              booking_id: booking_id || 'N/A',
+              ticket_number: ticket_number || '1',
+              pass_type: safePassType,
+              name: safeName,
+              date: safeDate
+            });
+            qrBuffer = await generateQRCodeBuffer(qrData);
+          }
+          
+        } else if (qrCode.startsWith('data:image')) {
+          const base64Data = qrCode.split('base64,').pop();
+          qrBuffer = Buffer.from(base64Data, 'base64');
+          
+        } else {
+          const base64Data = qrCode.replace(/^data:image\/png;base64,/i, '');
+          if (base64Data && base64Data.length > 0) {
+            try {
+              qrBuffer = Buffer.from(base64Data, 'base64');
+            } catch (imgErr) {
+              console.warn('Invalid base64 QR data, generating new one');
+              const qrData = JSON.stringify({
+                booking_id: booking_id || 'N/A',
+                ticket_number: ticket_number || '1',
+                pass_type: safePassType,
+                name: safeName,
+                date: safeDate
+              });
+              qrBuffer = await generateQRCodeBuffer(qrData);
+            }
+          } else {
+            throw new Error('Empty QR code data');
+          }
+        }
+      } else {
+        // Generate new QR code with ticket data
+        console.log('No QR code provided, generating new one');
+        const qrData = JSON.stringify({
+          booking_id: booking_id || 'N/A',
+          ticket_number: ticket_number || '1',
+          pass_type: safePassType,
           name: safeName,
           date: safeDate
         });
-        qrBuffer = await generateQRCodeBuffer(ticketData);
-      } else {
-        // Generate new QR code
-        const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
-        qrBuffer = await generateQRCodeBuffer(ticketNum);
+        qrBuffer = await generateQRCodeBuffer(qrData);
       }
       
       // Add QR code with decorative border
@@ -303,11 +392,18 @@ async function generateSingleTicketPage(doc, ticketData) {
            align: 'center', 
            width: 90 
          });
+      
+      doc.fontSize(8)
+         .fillColor('#999999')
+         .text(`ID: ${booking_id || 'N/A'}`, 165, qrYPos + 65, { 
+           align: 'center', 
+           width: 90 
+         });
     }
 
-    // Footer section
+    // Footer section with improved event details
     yPos += 160;
-    doc.rect(35, yPos, 350, 80)
+    doc.rect(35, yPos, 350, 90)
        .fillColor('#1a1a2e')
        .fill();
 
@@ -319,7 +415,23 @@ async function generateSingleTicketPage(doc, ticketData) {
     doc.fontSize(10)
        .fillColor('#ffffff')
        .font('Helvetica')
-       .text('Time: 7:00 PM onwards | 🎵 Live DJ & Traditional Music', 45, yPos + 30, { 
+       .text('Time: 7:00 PM onwards | Live DJ & Traditional Music', 45, yPos + 30, { 
+         align: 'center', 
+         width: 330 
+       });
+
+    doc.fontSize(10)
+       .fillColor('#ffffff')
+       .font('Helvetica')
+       .text('Entry gates open at 6:30 PM | Show this QR at entrance', 45, yPos + 50, { 
+         align: 'center', 
+         width: 330 
+       });
+
+    doc.fontSize(8)
+       .fillColor('#cccccc')
+       .font('Helvetica')
+       .text('This ticket is non-transferable | Valid for one person only', 45, yPos + 70, { 
          align: 'center', 
          width: 330 
        });
@@ -356,6 +468,33 @@ export const generateDandiyaTicketPDF = async (ticketData) => {
       } catch (error) {
         reject(error);
       }
+  });
+};
+
+// File-based multi-page PDF generator
+export const generateMultiPageTicketPDFFile = async (ticketsData) => {
+  return new Promise(async (resolve, reject) => {
+    // Ensure output directory exists
+    const ticketsDir = path.join(process.cwd(), "tickets");
+    try {
+       if (!fs.existsSync(ticketsDir)) {
+          fs.mkdirSync(ticketsDir, { recursive: true });
+       }
+    } catch (dirErr) {
+       return reject(dirErr);
+    }
+
+    try {
+      const pdfBuffer = await generateMultiPageTicketPDF(ticketsData);
+      const fileName = `dandiya-tickets-batch-${Date.now()}.pdf`;
+      const filePath = path.join(ticketsDir, fileName);
+      
+      fs.writeFileSync(filePath, pdfBuffer);
+      resolve(filePath);
+      
+    } catch (error) {
+      reject(error);
+    }
   });
 };
 
