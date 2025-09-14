@@ -44,9 +44,13 @@ const allowedOrigins = [
   'https://www.malangevents.com',
   process.env.FRONTEND_URL,
   process.env.NETLIFY_URL,
+  process.env.RAILWAY_URL,
   // Netlify preview URLs pattern
   /^https:\/\/.*\.netlify\.app$/,
-  /^https:\/\/.*\.netlify\.com$/
+  /^https:\/\/.*\.netlify\.com$/,
+  // Railway URLs pattern
+  /^https:\/\/.*\.railway\.app$/,
+  /^https:\/\/.*\.up\.railway\.app$/
 ].filter(Boolean); // Remove undefined values
 
 app.use(cors({

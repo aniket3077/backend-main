@@ -18,10 +18,19 @@ if (!process.env.DATABASE_URL) {
 } else {
   // Create PostgreSQL connection pool with optional SSL
   const sslEnabled = String(process.env.PG_SSL || 'true').toLowerCase() !== 'false';
-  pool = new Pool({
+  
+  const poolConfig = {
     connectionString: process.env.DATABASE_URL,
-    ssl: sslEnabled ? { rejectUnauthorized: false } : undefined
-  });
+    ssl: sslEnabled ? { 
+      rejectUnauthorized: false,
+      sslmode: 'require'
+    } : undefined,
+    max: 20, // maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // how long a client is allowed to remain idle
+    connectionTimeoutMillis: 10000, // how long to wait when connecting a client
+  };
+
+  pool = new Pool(poolConfig);
 
   // Prevent crashes on pool errors
   pool.on('error', (err) => {
