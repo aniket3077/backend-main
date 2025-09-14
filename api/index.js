@@ -17,6 +17,7 @@ const allowedOrigins = [
   'http://localhost:5174',
   'https://malangevents.com',
   'https://www.malangevents.com',
+  'https://backend-main-production-ef63.up.railway.app',
   process.env.FRONTEND_URL,
   process.env.RAILWAY_URL,
 ].filter(Boolean);
@@ -52,13 +53,49 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Initialize database connection on startup
+let dbStatus = { connected: false, error: null, lastChecked: null };
+
+async function initializeDatabase() {
+  try {
+    console.log('🔄 Testing Supabase database connection...');
+    const isConnected = await testConnection();
+    dbStatus = {
+      connected: isConnected,
+      error: isConnected ? null : 'Connection failed',
+      lastChecked: new Date().toISOString()
+    };
+    
+    if (isConnected) {
+      console.log('✅ Supabase database connected successfully');
+    } else {
+      console.error('❌ Supabase database connection failed');
+    }
+  } catch (error) {
+    console.error('🚨 Database initialization error:', error.message);
+    dbStatus = {
+      connected: false,
+      error: error.message,
+      lastChecked: new Date().toISOString()
+    };
+  }
+}
+
+// Initialize database connection
+initializeDatabase();
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     success: true, 
     message: 'Railway Serverless API is running',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    database: dbStatus,
+    supabase: {
+      configured: !!process.env.DATABASE_URL,
+      host: process.env.DATABASE_URL ? 'supabase.co' : 'not configured'
+    }
   });
 });
 
@@ -102,16 +139,74 @@ app.post('/api/bookings/confirm-payment', async (req, res) => {
 // Test database endpoint
 app.get('/api/test-db', async (req, res) => {
   try {
+    console.log('🔄 Testing database connection...');
     const isConnected = await testConnection();
+    
+    // Update status
+    dbStatus = {
+      connected: isConnected,
+      error: isConnected ? null : 'Connection test failed',
+      lastChecked: new Date().toISOString()
+    };
+    
     res.json({ 
       success: isConnected, 
-      message: isConnected ? 'Database connected' : 'Database offline',
-      timestamp: new Date().toISOString()
+      message: isConnected ? 'Supabase database connected' : 'Supabase database connection failed',
+      timestamp: new Date().toISOString(),
+      database: dbStatus,
+      connectionString: process.env.DATABASE_URL ? 'configured' : 'missing'
     });
   } catch (error) {
+    console.error('🚨 Database test error:', error);
+    dbStatus = {
+      connected: false,
+      error: error.message,
+      lastChecked: new Date().toISOString()
+    };
+    
     res.status(500).json({ 
       success: false, 
       error: error.message,
+      timestamp: new Date().toISOString(),
+      database: dbStatus
+    });
+  }
+});
+
+// Specific Supabase test endpoint
+app.get('/api/test-supabase', async (req, res) => {
+  try {
+    console.log('🔄 Testing Supabase specifically...');
+    
+    if (!process.env.DATABASE_URL) {
+      return res.status(500).json({
+        success: false,
+        error: 'DATABASE_URL environment variable not set',
+        supabase: { configured: false }
+      });
+    }
+    
+    // Test with a simple query
+    const result = await query('SELECT version(), current_database(), current_user;');
+    
+    res.json({
+      success: true,
+      message: 'Supabase connection successful',
+      supabase: {
+        configured: true,
+        database: result.rows[0].current_database,
+        user: result.rows[0].current_user,
+        version: result.rows[0].version.split(' ')[0] + ' ' + result.rows[0].version.split(' ')[1]
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('🚨 Supabase test error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      supabase: { configured: !!process.env.DATABASE_URL },
       timestamp: new Date().toISOString()
     });
   }

@@ -42,6 +42,7 @@ const allowedOrigins = [
   // Production origins
   'https://malangevents.com',
   'https://www.malangevents.com',
+  'https://backend-main-production-ef63.up.railway.app',
   process.env.FRONTEND_URL,
   process.env.NETLIFY_URL,
   process.env.RAILWAY_URL,
