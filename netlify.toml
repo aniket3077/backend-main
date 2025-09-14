@@ -1,0 +1,35 @@
+[build]
+  # Build command (if any dependencies need to be built)
+  command = "npm install"
+  
+  # Functions directory
+  functions = "netlify/functions"
+  
+  # No static publish directory for backend
+  publish = "."
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Environment variables for production
+[build.processing]
+  skip_processing = true
+
+# Redirect API routes to functions
+[[redirects]]
+  from = "/api/bookings/*"
+  to = "/.netlify/functions/bookings/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/qr/*"  
+  to = "/.netlify/functions/qr/:splat"
+  status = 200
+
+# Headers for CORS
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "https://malangevents.com"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
