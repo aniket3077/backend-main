@@ -1,8 +1,8 @@
 {
   "name": "ticket-booking",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "description": "Malang Dandiya Backend API - Railway Serverless",
+  "main": "api/index.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
@@ -11,7 +11,7 @@
     "vercel-build": "echo 'Build completed'",
     "netlify-build": "npm install && echo 'Netlify build completed'",
     "railway-build": "npm install",
-    "railway-start": "node server.js"
+    "railway-start": "node api/index.js"
   },
   "keywords": [],
   "author": "",

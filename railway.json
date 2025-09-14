@@ -4,8 +4,7 @@
     "builder": "nixpacks"
   },
   "deploy": {
-    "numReplicas": 1,
-    "sleepApplication": false,
-    "restartPolicyType": "always"
+    "startCommand": "node api/index.js",
+    "restartPolicyType": "ON_FAILURE"
   }
 }
