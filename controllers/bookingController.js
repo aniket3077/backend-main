@@ -116,14 +116,33 @@ function computeTotalAmount(passType, quantity = 1) {
 
 // 1️⃣ Create Booking
 export const createBooking = async (req, res) => {
-  const { booking_date, num_tickets, pass_type, ticket_type = 'single' } = req.body;
+  const { booking_date, num_tickets, pass_type, passes, original_passes, ticket_type = 'single' } = req.body;
+  
+  // Support both old format (num_tickets, pass_type) and new format (passes)
+  let bookingPasses = {};
+  let totalTickets = 0;
+  
+  if (passes && typeof passes === 'object') {
+    // New format: multiple pass types
+    bookingPasses = passes;
+    totalTickets = Object.values(passes).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    
+    // Log the couple ticket conversion for tracking
+    if (original_passes && original_passes.couple) {
+      console.log(`🎯 Couple ticket conversion: ${original_passes.couple} couple tickets converted to ${original_passes.couple} male + ${original_passes.couple} female tickets`);
+    }
+  } else if (num_tickets && pass_type) {
+    // Old format: single pass type (backward compatibility)
+    bookingPasses = { [pass_type]: Number(num_tickets) };
+    totalTickets = Number(num_tickets);
+  }
   
   // Validate required fields
-  if (!booking_date || !num_tickets || !pass_type) {
+  if (!booking_date || totalTickets === 0) {
     return res.status(400).json({
       success: false,
       error: "Missing required fields",
-      message: "booking_date, num_tickets, and pass_type are required"
+      message: "booking_date and at least one pass type with tickets are required"
     });
   }
 
@@ -138,15 +157,42 @@ export const createBooking = async (req, res) => {
   }
   
   try {
-    // Calculate pricing with bulk discount
-    const priceInfo = calculateTicketPrice(pass_type, ticket_type, num_tickets);
+    // Calculate total pricing for all pass types
+    let totalAmount = 0;
+    let totalDiscount = 0;
+    let discountApplied = false;
+    let passDetails = [];
+    
+    for (const [passType, count] of Object.entries(bookingPasses)) {
+      const passCount = Number(count);
+      if (passCount > 0) {
+        try {
+          const priceInfo = calculateTicketPrice(passType, ticket_type, passCount);
+          totalAmount += priceInfo.totalAmount;
+          totalDiscount += priceInfo.savings || 0;
+          if (priceInfo.discountApplied) discountApplied = true;
+          
+          passDetails.push({
+            pass_type: passType,
+            num_tickets: passCount,
+            base_price: priceInfo.basePrice,
+            final_price: priceInfo.finalPrice,
+            discount: priceInfo.savings || 0
+          });
+        } catch (priceError) {
+          console.warn(`Warning: Could not calculate price for ${passType}: ${priceError.message}`);
+          // Continue with other pass types
+        }
+      }
+    }
     
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
-      num_tickets: parseInt(num_tickets),
-      pass_type,
+      passes: bookingPasses,
+      total_tickets: totalTickets,
       ticket_type,
-      pricing: priceInfo,
+      total_amount: totalAmount,
+      discount: totalDiscount,
       status: 'pending'
     });
     
@@ -164,12 +210,17 @@ export const createBooking = async (req, res) => {
         ADD COLUMN IF NOT EXISTS staff_notes TEXT,
         ADD COLUMN IF NOT EXISTS manual_confirmation BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS confirmed_by INTEGER,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS pass_details JSONB
       `);
     } catch (alterError) {
       console.log('Schema update info:', alterError.message);
     }
 
+    // For database compatibility, we'll store the primary pass type and total tickets
+    // But also store the complete pass details in a JSON field
+    const primaryPassType = Object.keys(bookingPasses)[0] || 'female';
+    
     const result = await query(`
       INSERT INTO bookings (
         booking_date, 
@@ -183,23 +234,43 @@ export const createBooking = async (req, res) => {
         is_season_pass,
         bulk_discount_applied,
         original_ticket_price,
-        discounted_price
+        discounted_price,
+        pass_details
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
       parsedDate, 
-      parseInt(num_tickets), 
-      pass_type, 
+      totalTickets, 
+      primaryPassType, 
       ticket_type,
       'pending', 
-      priceInfo.totalAmount, 
-      priceInfo.savings || 0, 
-      priceInfo.totalAmount,
+      totalAmount, 
+      totalDiscount, 
+      totalAmount,
       ticket_type === 'season',
-      priceInfo.discountApplied || false,
-      priceInfo.basePrice,
-      priceInfo.finalPrice
+      discountApplied,
+      totalAmount + totalDiscount,
+      totalAmount,
+      JSON.stringify({ 
+        passes: bookingPasses, 
+        details: passDetails,
+        original_passes: original_passes || bookingPasses,
+        couple_conversion: original_passes && original_passes.couple ? {
+          couple_tickets: original_passes.couple,
+          converted_to: {
+            male: original_passes.couple,
+            female: original_passes.couple
+          }
+        } : null,
+        family_conversion: original_passes && original_passes.family ? {
+          family_tickets: original_passes.family,
+          converted_to: {
+            male: original_passes.family * 2,
+            female: original_passes.family * 2
+          }
+        } : null
+      })
     ]);
     
     // Check if we actually got a result (database available)
@@ -219,17 +290,35 @@ export const createBooking = async (req, res) => {
       // Database is offline, create mock booking
       console.log('⚠️ Database offline - creating mock booking');
       const mockBookingId = Date.now().toString();
-      const totalAmount = computeTotalAmount(pass_type, num_tickets) || 0;
       
       const mockBooking = {
         id: mockBookingId,
         booking_date: parsedDate.toISOString(),
-        num_tickets: parseInt(num_tickets),
-        pass_type,
+        num_tickets: totalTickets,
+        pass_type: primaryPassType,
         status: 'pending',
         total_amount: totalAmount,
-        discount_amount: 0,
+        discount_amount: totalDiscount,
         final_amount: totalAmount,
+        pass_details: JSON.stringify({ 
+          passes: bookingPasses, 
+          details: passDetails,
+          original_passes: original_passes || bookingPasses,
+          couple_conversion: original_passes && original_passes.couple ? {
+            couple_tickets: original_passes.couple,
+            converted_to: {
+              male: original_passes.couple,
+              female: original_passes.couple
+            }
+          } : null,
+          family_conversion: original_passes && original_passes.family ? {
+            family_tickets: original_passes.family,
+            converted_to: {
+              male: original_passes.family * 2,
+              female: original_passes.family * 2
+            }
+          } : null
+        }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         _isMockBooking: true
@@ -366,12 +455,10 @@ export const createPayment = async (req, res) => {
   
   try {
     let computedAmount = null;
-    let bookingPassType = null;
-    let bookingQty = 1;
     
-    // Fetch booking to get authoritative pass_type and num_tickets
+    // Fetch booking to get complete pass details for accurate pricing
     const result = await query(`
-      SELECT pass_type, num_tickets FROM bookings WHERE id = $1
+      SELECT pass_type, num_tickets, total_amount, pass_details FROM bookings WHERE id = $1
     `, [parseInt(booking_id)]);
     
     if (result.rows.length === 0) {
@@ -379,12 +466,24 @@ export const createPayment = async (req, res) => {
     }
     
     const booking = result.rows[0];
-    bookingPassType = booking.pass_type;
-    bookingQty = booking.num_tickets;
-    computedAmount = computeTotalAmount(bookingPassType, bookingQty);
-    if (computedAmount === null) {
-      return res.status(400).json({ success: false, error: `Unsupported pass_type: ${bookingPassType}` });
+    
+    // Use the pre-calculated total_amount from booking creation (which correctly handles multiple pass types)
+    computedAmount = booking.total_amount;
+    
+    // Fallback to old calculation method if total_amount is null/zero
+    if (!computedAmount || computedAmount <= 0) {
+      console.warn('Warning: Using fallback pricing calculation');
+      computedAmount = computeTotalAmount(booking.pass_type, booking.num_tickets);
     }
+    
+    if (!computedAmount || computedAmount <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Unable to calculate amount for booking ${booking_id}` 
+      });
+    }
+    
+    console.log(`💰 Payment amount for booking ${booking_id}: ₹${computedAmount}`);
     
     // Check if Razorpay is initialized
     if (!razorpay) {
@@ -581,34 +680,193 @@ async function sendTicketNotifications(booking_id, payment_id) {
     const qrCode = booking.qr_codes.length > 0 ? booking.qr_codes[0] : null;
     const payment = booking.payments.length > 0 ? booking.payments[0] : null;
 
-    // Generate PDF tickets for all QR codes (multiple tickets)
+    // Generate PDF tickets - Single multi-page PDF approach
     let pdfAttachments = [];
     try {
       if (booking.qr_codes && booking.qr_codes.length > 0) {
         const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
         
-        // Generate a PDF for each ticket/QR code
-        for (let i = 0; i < booking.qr_codes.length; i++) {
-          const qrCodeData = booking.qr_codes[i];
-          const ticketUserName = booking.users[i]?.name || primaryUser.name;
-          
-          const pdfBuffer = await generateTicketPDFBuffer({
-            name: ticketUserName,
-            date: booking.booking_date,
-            pass_type: booking.pass_type,
-            qrCode: qrCodeData.qr_code_url,
-            booking_id: booking.id.toString(),
-            ticket_number: qrCodeData.ticket_number
-          });
-          
-          pdfAttachments.push({
-            filename: `Dandiya_Ticket_${booking.id}_${i + 1}.pdf`,
-            content: pdfBuffer,
-            contentType: 'application/pdf'
-          });
+        // Check if this is a couple booking and needs special handling
+        let originalPassDetails = null;
+        if (booking.pass_details) {
+          try {
+            // Handle both string and object cases
+            originalPassDetails = typeof booking.pass_details === 'string' 
+              ? JSON.parse(booking.pass_details) 
+              : booking.pass_details;
+          } catch (parseError) {
+            console.warn('Failed to parse pass_details:', parseError.message);
+            originalPassDetails = null;
+          }
         }
         
-        console.log(`📄 Generated ${pdfAttachments.length} PDF tickets successfully`);
+        // Collect all tickets data for multi-page PDF
+        let allTicketsData = [];
+        const hasOriginalCoupleTickets = originalPassDetails?.original_passes?.couple > 0;
+        const hasOriginalFamilyTickets = originalPassDetails?.original_passes?.family > 0;
+        
+        // Handle couple tickets if present
+        if (hasOriginalCoupleTickets && originalPassDetails.couple_conversion) {
+          const coupleCount = originalPassDetails.couple_conversion.couple_tickets;
+          console.log(`🎭 Adding ${coupleCount} couple tickets as separate male/female tickets to multi-page PDF`);
+          
+          for (let i = 0; i < coupleCount; i++) {
+            const qrCodeData = booking.qr_codes[i * 2] || booking.qr_codes[0];
+            const ticketUserName = booking.users[0]?.name || primaryUser.name;
+            
+            // Add male ticket data
+            const maleQrCodeData = booking.qr_codes[i * 2] || booking.qr_codes[i] || qrCodeData;
+            allTicketsData.push({
+              name: `${ticketUserName} (Male)`,
+              date: booking.booking_date,
+              pass_type: 'male', // White for male
+              qrCode: maleQrCodeData.qr_code_url,
+              booking_id: booking.id.toString(),
+              ticket_number: maleQrCodeData.ticket_number
+            });
+            
+            // Add female ticket data
+            const femaleQrCodeData = booking.qr_codes[i * 2 + 1] || booking.qr_codes[i] || qrCodeData;
+            allTicketsData.push({
+              name: `${ticketUserName} (Female)`,
+              date: booking.booking_date,
+              pass_type: 'female', // Pink for female
+              qrCode: femaleQrCodeData.qr_code_url,
+              booking_id: booking.id.toString(),
+              ticket_number: femaleQrCodeData.ticket_number
+            });
+          }
+        }
+        
+        // Handle family tickets if present
+        if (hasOriginalFamilyTickets && originalPassDetails.family_conversion) {
+          const familyCount = originalPassDetails.family_conversion.family_tickets;
+          console.log(`👨‍👩‍👧‍👦 Adding ${familyCount} family tickets as 2 male + 2 female tickets to multi-page PDF`);
+          
+          for (let i = 0; i < familyCount; i++) {
+            const qrCodeData = booking.qr_codes[0] || booking.qr_codes[i];
+            const ticketUserName = booking.users[0]?.name || primaryUser.name;
+            
+            // Add 2 male tickets per family
+            for (let maleIndex = 0; maleIndex < 2; maleIndex++) {
+              const maleQrCodeData = booking.qr_codes[i * 4 + maleIndex] || booking.qr_codes[maleIndex] || qrCodeData;
+              allTicketsData.push({
+                name: `${ticketUserName} (Male ${maleIndex + 1})`,
+                date: booking.booking_date,
+                pass_type: 'male', // White for male
+                qrCode: maleQrCodeData.qr_code_url,
+                booking_id: booking.id.toString(),
+                ticket_number: maleQrCodeData.ticket_number
+              });
+            }
+            
+            // Add 2 female tickets per family
+            for (let femaleIndex = 0; femaleIndex < 2; femaleIndex++) {
+              const femaleQrCodeData = booking.qr_codes[i * 4 + 2 + femaleIndex] || booking.qr_codes[2 + femaleIndex] || qrCodeData;
+              allTicketsData.push({
+                name: `${ticketUserName} (Female ${femaleIndex + 1})`,
+                date: booking.booking_date,
+                pass_type: 'female', // Pink for female
+                qrCode: femaleQrCodeData.qr_code_url,
+                booking_id: booking.id.toString(),
+                ticket_number: femaleQrCodeData.ticket_number
+              });
+            }
+          }
+        }
+        
+        // Handle regular individual tickets (excluding couple and family since they're already converted)
+        if (originalPassDetails && originalPassDetails.original_passes) {
+          console.log('🎫 Adding regular individual tickets to multi-page PDF');
+          
+          let ticketIndex = 0;
+          // Skip couple and family in individual ticket generation since they're already handled above
+          const skipTypes = ['couple', 'family'];
+          
+          // Use original_passes instead of processed passes to avoid double counting
+          for (const [passType, count] of Object.entries(originalPassDetails.original_passes)) {
+            if (skipTypes.includes(passType)) {
+              continue; // Skip couple and family - they're handled above
+            }
+            
+            const passCount = Number(count);
+            if (passCount > 0) {
+              console.log(`📋 Adding ${passCount} individual ${passType} tickets to multi-page PDF`);
+              
+              for (let i = 0; i < passCount; i++) {
+                const qrCodeData = booking.qr_codes[ticketIndex] || booking.qr_codes[0];
+                const ticketUserName = booking.users[ticketIndex]?.name || primaryUser.name;
+                
+                allTicketsData.push({
+                  name: `${ticketUserName} (${passType.charAt(0).toUpperCase() + passType.slice(1)})`,
+                  date: booking.booking_date,
+                  pass_type: passType,
+                  qrCode: qrCodeData.qr_code_url,
+                  booking_id: booking.id.toString(),
+                  ticket_number: qrCodeData.ticket_number
+                });
+                
+                ticketIndex++;
+              }
+            }
+          }
+        }
+        
+        // Fallback for old format or missing pass details
+        if (!hasOriginalCoupleTickets && !hasOriginalFamilyTickets && (!originalPassDetails || !originalPassDetails.passes)) {
+          console.log('🔄 Using fallback ticket data collection for multi-page PDF');
+          for (let i = 0; i < booking.qr_codes.length; i++) {
+            const qrCodeData = booking.qr_codes[i];
+            const ticketUserName = booking.users[i]?.name || primaryUser.name;
+            
+            allTicketsData.push({
+              name: ticketUserName,
+              date: booking.booking_date,
+              pass_type: booking.pass_type,
+              qrCode: qrCodeData.qr_code_url,
+              booking_id: booking.id.toString(),
+              ticket_number: qrCodeData.ticket_number
+            });
+          }
+        }
+        
+        // Generate single multi-page PDF with all tickets
+        if (allTicketsData.length > 0) {
+          console.log(`📄 Generating single multi-page PDF with ${allTicketsData.length} tickets`);
+          
+          try {
+            // Import the multi-page PDF generator
+            const { generateMultiPageTicketPDF } = await import('../utils/pdfGenerator.js');
+            
+            // Generate single multi-page PDF
+            const multiPagePdfBuffer = await generateMultiPageTicketPDF(allTicketsData, booking.id);
+            
+            pdfAttachments.push({
+              filename: `MalangRas_AllTickets_${booking.id}.pdf`,
+              content: multiPagePdfBuffer,
+              contentType: 'application/pdf'
+            });
+            
+            console.log(`📄 Generated single multi-page PDF with ${allTicketsData.length} tickets successfully`);
+            
+          } catch (multiPdfError) {
+            console.error('❌ Multi-page PDF generation failed, falling back to individual PDFs:', multiPdfError);
+            
+            // Fallback to individual PDFs
+            for (let i = 0; i < allTicketsData.length; i++) {
+              const ticketData = allTicketsData[i];
+              const pdfBuffer = await generateTicketPDFBuffer(ticketData);
+              
+              pdfAttachments.push({
+                filename: `Dandiya_Ticket_${ticketData.pass_type}_${booking.id}_${i + 1}.pdf`,
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+              });
+            }
+            
+            console.log(`📄 Generated ${pdfAttachments.length} individual PDF tickets as fallback`);
+          }
+        }
       }
     } catch (pdfError) {
       console.error('Error generating PDFs:', pdfError);
@@ -618,9 +876,36 @@ async function sendTicketNotifications(booking_id, payment_id) {
     // Send email notification if email exists
     if (primaryUser.email) {
       try {
+        // Determine email subject based on ticket type
+        let emailSubject;
+        let originalPassDetails = null;
+        if (booking.pass_details) {
+          try {
+            // Handle both string and object cases
+            originalPassDetails = typeof booking.pass_details === 'string' 
+              ? JSON.parse(booking.pass_details) 
+              : booking.pass_details;
+          } catch (parseError) {
+            console.warn('Failed to parse pass_details for email:', parseError.message);
+            originalPassDetails = null;
+          }
+        }
+        const hasOriginalCoupleTickets = originalPassDetails?.original_passes?.couple > 0;
+        const hasOriginalFamilyTickets = originalPassDetails?.original_passes?.family > 0;
+        
+        if (hasOriginalCoupleTickets) {
+          const coupleCount = originalPassDetails.couple_conversion?.couple_tickets || 1;
+          emailSubject = `Your Dandiya Night Couple Tickets #${booking.id} (${coupleCount} couple ticket${coupleCount > 1 ? 's' : ''} - ${coupleCount * 2} individual passes)`;
+        } else if (hasOriginalFamilyTickets) {
+          const familyCount = originalPassDetails.family_conversion?.family_tickets || 1;
+          emailSubject = `Your Dandiya Night Family Tickets #${booking.id} (${familyCount} family ticket${familyCount > 1 ? 's' : ''} - ${familyCount * 4} individual passes)`;
+        } else {
+          emailSubject = `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`;
+        }
+        
         const emailData = {
           to: primaryUser.email,
-          subject: `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
+          subject: emailSubject,
           booking: booking,
           userName: primaryUser.name,
           qrCodeUrl: qrCode?.qr_code_url
@@ -633,7 +918,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
         
         await sendTicketEmail(
           primaryUser.email,
-          `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
+          emailSubject,
           primaryUser.name,
           emailData.attachments
         );
@@ -653,14 +938,11 @@ async function sendTicketNotifications(booking_id, payment_id) {
           `💰 Amount: ₹${payment?.amount || booking.final_amount || 0}\n\n` +
           `Show this QR code at the entrance.`;
 
-        await whatsappService.sendBookingConfirmation({
-          phoneNumber: phoneNumber,
-          customerName: primaryUser.name,
-          eventName: 'Dandiya Night',
-          ticketCount: booking.num_tickets,
-          bookingId: booking.id.toString(),
-          pdfPath: null // Will be handled by WhatsApp service
-        });
+        await whatsappService.sendTicketMessage(
+          phoneNumber,
+          message,
+          null // Attachments will be handled separately if needed
+        );
         console.log('💬 WhatsApp notification sent to:', phoneNumber);
       } catch (whatsappError) {
         console.error('Failed to send WhatsApp message:', whatsappError);
