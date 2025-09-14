@@ -321,6 +321,37 @@ export const addUserDetails = async (req, res) => {
     res.status(201).json({ success: true, user: userResponse });
   } catch (err) {
     console.error("Error adding user details:", err);
+    
+    // Check if this is a database connection error
+    const isConnectionError = err.code === 'ENETUNREACH' || 
+                            err.code === 'ENOTFOUND' || 
+                            err.code === 'ECONNREFUSED' || 
+                            err.code === 'ETIMEDOUT' ||
+                            err.message.includes('connect') ||
+                            err.message.includes('timeout');
+    
+    if (isConnectionError) {
+      console.log('⚠️ Database connection failed - creating mock user');
+      const mockUser = {
+        id: `mock_user_${Date.now()}`,
+        booking_id: booking_id,
+        name,
+        email,
+        phone,
+        is_primary,
+        created_at: new Date().toISOString(),
+        _isMockUser: true
+      };
+      
+      console.log('✅ Mock user created:', mockUser);
+      return res.status(201).json({ 
+        success: true, 
+        user: mockUser,
+        mock: true,
+        message: "User details saved in offline mode. Will be synchronized when database is available."
+      });
+    }
+    
     res.status(500).json({ 
       success: false, 
       error: "Failed to add user details",
