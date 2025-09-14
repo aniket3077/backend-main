@@ -17,11 +17,12 @@ Copy `.env.example` to `.env` and configure:
 NODE_ENV=production
 PORT=5000
 DATABASE_URL=your_database_url
-QR_BASE_URL=https://your-backend-domain.com
-CORS_ORIGIN=https://your-frontend-domain.com,https://your-admin-domain.com
+QR_BASE_URL=https://api.malangevents.com
+CORS_ORIGIN=https://malangevents.com,https://www.malangevents.com
 RAZORPAY_KEY_ID=your_razorpay_key
 RAZORPAY_KEY_SECRET=your_razorpay_secret
 RESEND_API_KEY=your_resend_key
+FRONTEND_URL=https://malangevents.com
 ```
 
 ## Deployment
