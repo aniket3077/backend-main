@@ -162,6 +162,165 @@ bookingRoutes.post("/qr-details", bookingController.getQRDetails);
 bookingRoutes.post("/mark-used", bookingController.markTicketUsed);
 bookingRoutes.post("/resend-notifications", bookingController.resendNotifications);
 
+// Test endpoints for debugging PDF/email/WhatsApp issues
+bookingRoutes.post("/test-email", async (req, res) => {
+  try {
+    console.log("🧪 Testing email with PDF attachment...");
+    
+    const { email, name, subject } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Email is required" });
+    }
+    
+    // Generate a test PDF
+    const { generateTicketPDFBuffer } = await import("./utils/pdfGenerator.js");
+    const testData = {
+      name: name || "Test User",
+      date: new Date().toISOString(),
+      pass_type: "couple",
+      qrCode: "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=TEST123",
+      booking_id: "TEST-12345",
+      ticket_number: "TEST-TICKET-001"
+    };
+    
+    const pdfBuffer = await generateTicketPDFBuffer(testData);
+    console.log(`📄 Generated PDF buffer: ${pdfBuffer ? pdfBuffer.length : 0} bytes`);
+    
+    // Send email with PDF attachment
+    const { sendTicketEmail } = await import("./utils/emailService.js");
+    
+    const attachments = pdfBuffer ? [{
+      filename: 'test-ticket.pdf',
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    }] : [];
+    
+    await sendTicketEmail(
+      email,
+      subject || "Test Ticket Email",
+      name || "Test User",
+      attachments
+    );
+    
+    res.json({
+      success: true,
+      message: `Test email sent successfully to ${email}`,
+      data: {
+        recipient: email,
+        subject: subject || "Test Ticket Email",
+        timestamp: new Date().toISOString(),
+        service: "resend"
+      },
+      meta: {
+        attachmentCount: attachments.length,
+        pdfSize: pdfBuffer ? pdfBuffer.length : 0,
+        service: "resend_production"
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log(`✅ Test email sent to ${email} with ${attachments.length} attachments`);
+    
+  } catch (error) {
+    console.error("❌ Test email failed:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Email test failed", 
+      details: error.message 
+    });
+  }
+});
+
+bookingRoutes.post("/test-whatsapp", async (req, res) => {
+  try {
+    console.log("🧪 Testing WhatsApp message...");
+    
+    const { phone, name, eventName, ticketCount, amount, bookingId } = req.body;
+    
+    if (!phone) {
+      return res.status(400).json({ success: false, error: "Phone number is required" });
+    }
+    
+    const whatsappService = (await import("./services/whatsappService.js")).default;
+    
+    const result = await whatsappService.sendBookingConfirmation({
+      phone: phone,
+      name: name || "Test User",
+      eventName: eventName || "Dandiya Night Test",
+      ticketCount: ticketCount || 2,
+      amount: amount || "₹500",
+      bookingId: bookingId || "TEST123"
+    });
+    
+    res.json({
+      success: true,
+      message: `Test WhatsApp sent successfully to ${phone}`,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log(`✅ Test WhatsApp sent to ${phone}`);
+    
+  } catch (error) {
+    console.error("❌ Test WhatsApp failed:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "WhatsApp test failed", 
+      details: error.message 
+    });
+  }
+});
+
+// Test database connection under load
+bookingRoutes.post("/test-database", async (req, res) => {
+  try {
+    console.log("🧪 Testing database connection and query performance...");
+    
+    const { query } = await import("./config/database.js");
+    
+    const startTime = Date.now();
+    
+    // Test a simple query
+    const result1 = await query('SELECT NOW() as current_time, version() as db_version');
+    const queryTime1 = Date.now() - startTime;
+    
+    // Test a more complex query (simulate payment confirmation lookup)
+    const startTime2 = Date.now();
+    const result2 = await query('SELECT 1 as test_id, $1 as test_param, NOW() as query_time', ['test_value']);
+    const queryTime2 = Date.now() - startTime2;
+    
+    res.json({
+      success: true,
+      message: "Database connection test completed",
+      results: {
+        simple_query: {
+          time_ms: queryTime1,
+          current_time: result1.rows[0]?.current_time,
+          db_version: result1.rows[0]?.db_version?.substring(0, 50) + "..."
+        },
+        parameterized_query: {
+          time_ms: queryTime2,
+          test_result: result2.rows[0]
+        }
+      },
+      total_time_ms: Date.now() - startTime,
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log(`✅ Database test completed - Simple: ${queryTime1}ms, Parameterized: ${queryTime2}ms`);
+    
+  } catch (error) {
+    console.error("❌ Database test failed:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Database test failed", 
+      details: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 app.use("/api/bookings", bookingRoutes);
 console.log("✅ Booking routes loaded");
 
@@ -251,6 +410,9 @@ app.use((req, res) => {
       'POST /api/bookings/qr-details',
       'POST /api/bookings/mark-used',
       'POST /api/bookings/resend-notifications',
+      'POST /api/bookings/test-email',
+      'POST /api/bookings/test-whatsapp',
+      'POST /api/bookings/test-database',
       'GET /api/admin/dashboard/stats',
       'GET /api/admin/dashboard/recent-scans',
       'GET /api/admin/dashboard/chart-data',
