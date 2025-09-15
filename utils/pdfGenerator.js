@@ -4,10 +4,136 @@ import path from "path";
 import axios from "axios";
 import { generateQRCodeBuffer } from "./qrGenerator.js";
 
-// Enhanced Dandiya ticket PDF generator with logo and improved design
+/**
+ * 🎟️ OFFICIAL TICKET COLOR RULES - Master Implementation
+ * 
+ * Single Tickets:
+ * - Male → White (❌ cannot be purchased alone)
+ * - Female → Pink  
+ * - Couple → Purple (always 2 tickets in PDF)
+ * - Family → Green (always 4 tickets in PDF) 
+ * - Kid → Yellow (❌ cannot be purchased alone)
+ * 
+ * Season Pass Tickets → Rainbow (with 9 rainbow elements)
+ * - Female Season Pass → Rainbow
+ * - Family Season Pass → Rainbow  
+ * - Couple Season Pass → Rainbow
+ */
+
+// 🌈 Centralized Color Mapping Function
+const getTicketColors = (passType, ticketType = 'single') => {
+  const type = (passType || '').toString().toLowerCase();
+  const isSeasonPass = ticketType === 'season';
+  
+  // Season Pass tickets get rainbow design
+  if (isSeasonPass && (type === 'female' || type === 'family' || type === 'family4' || type === 'couple')) {
+    return { 
+      primary: '#FF0000', 
+      secondary: '#FF7F00', 
+      tertiary: '#FFFF00',
+      name: 'RAINBOW',
+      isRainbow: true,
+      rainbowColors: ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3']
+    };
+  }
+  
+  // Standard single day tickets
+  switch (type) {
+    case 'male': 
+      return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
+    case 'female': 
+      return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
+    case 'couple': 
+      return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
+    case 'family':
+    case 'family4': 
+      return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
+    case 'kids':
+    case 'kid': 
+      return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
+    case 'group': 
+      return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
+    default: 
+      return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
+  }
+};
+
+// 🌈 Rainbow Design Generator - Appears 9 Times for Season Passes
+const addRainbowElements = (doc, colors, centerX = 210, centerY = 325) => {
+  const rainbowColors = colors.rainbowColors;
+  
+  // Rainbow Element 1: Header Gradient Bar
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(40 + (i * 45), 30, 45, 8)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 2: Side Border Stripes (Left)
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(15, 80 + (i * 60), 8, 50)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 3: Side Border Stripes (Right)
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(397, 80 + (i * 60), 8, 50)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 4: QR Code Frame
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(centerX - 60 + (i * 17), centerY - 60, 15, 3)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 5: Decorative Circles
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.circle(50 + (i * 45), 550, 8)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 6: Footer Wave Pattern
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(30 + (i * 50), 600, 40, 6)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 7: Corner Triangles
+  for (let i = 0; i < 4; i++) {
+    const x = i < 2 ? 30 : 370;
+    const y = i % 2 === 0 ? 50 : 580;
+    doc.polygon([x, y], [x + 15, y], [x, y + 15])
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 8: Pass Type Badge Rainbow Border
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(250 + (i * 2), 270, 2, 25)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+  
+  // Rainbow Element 9: Season Pass Special Text Background
+  for (let i = 0; i < rainbowColors.length; i++) {
+    doc.rect(45 + (i * 42), 195, 40, 4)
+       .fillColor(rainbowColors[i])
+       .fill();
+  }
+};
+
+/**
+ * Enhanced Dandiya ticket PDF generator with official color coding
+ */
 export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
    return new Promise(async (resolve, reject) => {
-      const { name, date, pass_type, qrCode, booking_id, ticket_number, venue } = ticketData || {};
+      const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, ticket_type } = ticketData || {};
 
       // Safe defaults
       const safeName = (name ?? "Guest").toString();
@@ -15,21 +141,8 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
       const safeDate = date ?? new Date().toISOString();
       const safeVenue = venue ?? "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
 
-      // Color coding based on pass type - Enhanced scheme
-      const getPassTypeColor = (passType) => {
-        const type = passType.toLowerCase();
-        switch (type) {
-          case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
-          case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
-          case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
-          case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
-          case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
-          case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
-          default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
-        }
-      };
-
-      const passTypeColors = getPassTypeColor(safePassType);
+      // Use centralized color mapping
+      const passTypeColors = getTicketColors(safePassType, ticket_type);
 
       const doc = new PDFDocument({ size: [420, 650], margin: 15 });
       const chunks = [];
@@ -74,21 +187,8 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
           doc.addPage();
         }
 
-        // Color coding based on pass type
-        const getPassTypeColor = (passType) => {
-          const type = (passType || '').toString().toLowerCase();
-          switch (type) {
-            case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
-            case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
-            case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
-            case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
-            case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
-            case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
-            default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
-          }
-        };
-
-        const passTypeColors = getPassTypeColor(ticketData.pass_type);
+        // Use centralized color mapping
+        const passTypeColors = getTicketColors(ticketData.pass_type, ticketData.ticket_type);
 
         await generateSingleTicketPage(doc, {
           name: ticketData.name || "Guest",
@@ -121,6 +221,11 @@ async function generateSingleTicketPage(doc, ticketData) {
 
     // Background - Rich gradient effect
     doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
+    
+    // 🌈 Add rainbow design for season passes (9 rainbow elements)
+    if (passTypeColors.isRainbow) {
+      addRainbowElements(doc, passTypeColors);
+    }
     
     // Decorative border with pass type color
     doc.roundedRect(10, 10, 400, 630, 12)
@@ -558,15 +663,36 @@ export const generateMultipleTicketsPDFBuffer = async (ticketsData) => {
            width: doc.page.width - 100
          });
 
-      // Now generate individual ticket pages
-      for (let i = 0; i < ticketsData.length; i++) {
-        const ticketData = ticketsData[i];
+      // Now generate individual ticket pages with smart pagination
+      const TICKETS_PER_PAGE = 4; // Max 4-5 tickets per page for crowded layouts
+      
+      for (let i = 0; i < ticketsData.length; i += TICKETS_PER_PAGE) {
+        // Add new page for each batch of tickets
+        doc.addPage({ size: 'A4', margin: 20 });
         
-        // Add new page for each ticket (except we're already on page 1 after cover)
-        doc.addPage({ size: [420, 650], margin: 20 });
+        // Calculate how many tickets to put on this page
+        const ticketsOnThisPage = Math.min(TICKETS_PER_PAGE, ticketsData.length - i);
         
-        // Generate individual ticket content on this page
-        await generateSingleTicketOnPage(doc, ticketData, i + 1, ticketsData.length);
+        if (ticketsOnThisPage === 1) {
+          // Single ticket - use full page
+          await generateCompactTicketOnPage(doc, ticketsData[i], i + 1, ticketsData.length, 0, 0, doc.page.width - 40, doc.page.height - 40);
+        } else {
+          // Multiple tickets - use grid layout
+          const cols = 2;
+          const rows = Math.ceil(ticketsOnThisPage / cols);
+          const ticketWidth = (doc.page.width - 60) / cols;
+          const ticketHeight = (doc.page.height - 60) / rows;
+          
+          for (let j = 0; j < ticketsOnThisPage; j++) {
+            const ticketData = ticketsData[i + j];
+            const col = j % cols;
+            const row = Math.floor(j / cols);
+            const x = 20 + (col * ticketWidth);
+            const y = 20 + (row * ticketHeight);
+            
+            await generateCompactTicketOnPage(doc, ticketData, i + j + 1, ticketsData.length, x, y, ticketWidth - 10, ticketHeight - 10);
+          }
+        }
       }
 
       doc.end();
@@ -588,21 +714,8 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
   const safeDate = date ?? new Date().toISOString();
   const safeVenue = venue ?? "Event Ground, Malang";
 
-  // Color coding based on pass type
-  const getPassTypeColor = (passType) => {
-    const type = passType.toLowerCase();
-    switch (type) {
-      case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
-      case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
-      case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
-      case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
-      case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
-      case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
-      default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
-    }
-  };
-
-  const passTypeColors = getPassTypeColor(safePassType);
+  // Use centralized color mapping
+  const passTypeColors = getTicketColors(safePassType, ticketData.ticket_type);
 
   // Background
   doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
@@ -893,8 +1006,174 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
      });
 };
 
+// 🎟️ Compact Ticket Generator - For Grid Layouts (4-5 tickets per page)
+const generateCompactTicketOnPage = async (doc, ticketData, ticketNumber, totalTickets, x, y, width, height) => {
+  const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, ticket_type } = ticketData || {};
+
+  // Safe defaults
+  const safeName = (name ?? "Guest").toString();
+  const safePassType = (pass_type ?? "Standard Pass").toString();
+  const safeDate = date ?? new Date().toISOString();
+  const safeVenue = venue ?? "Event Ground, Malang";
+
+  // Use centralized color mapping
+  const passTypeColors = getTicketColors(safePassType, ticket_type);
+
+  // Ticket background
+  doc.rect(x, y, width, height)
+     .fillColor('#ffffff')
+     .fill()
+     .strokeColor(passTypeColors.primary)
+     .lineWidth(2)
+     .stroke();
+
+  // Header bar with pass type color
+  doc.rect(x, y, width, 30)
+     .fillColor(passTypeColors.primary)
+     .fill();
+
+  // 🌈 Compact rainbow elements for season passes
+  if (passTypeColors.isRainbow) {
+    // Add mini rainbow stripes in header
+    for (let i = 0; i < passTypeColors.rainbowColors.length; i++) {
+      doc.rect(x + 5 + (i * (width - 10) / 7), y + 25, (width - 10) / 7, 3)
+         .fillColor(passTypeColors.rainbowColors[i])
+         .fill();
+    }
+    
+    // Add rainbow border elements
+    for (let i = 0; i < passTypeColors.rainbowColors.length; i++) {
+      doc.rect(x + 2, y + 35 + (i * (height - 70) / 7), 3, (height - 70) / 7)
+         .fillColor(passTypeColors.rainbowColors[i])
+         .fill();
+    }
+  }
+
+  // Event title in header
+  doc.fontSize(10)
+     .fillColor('#ffffff')
+     .font('Helvetica-Bold')
+     .text('MALANG RAS DANDIYA 2025', x + 5, y + 8, {
+       width: width - 10,
+       align: 'center'
+     });
+
+  // Ticket content
+  let currentY = y + 40;
+  
+  // Guest name
+  doc.fontSize(9)
+     .fillColor(passTypeColors.primary)
+     .font('Helvetica-Bold')
+     .text('GUEST:', x + 8, currentY);
+  
+  doc.fontSize(8)
+     .fillColor('#000000')
+     .font('Helvetica')
+     .text(safeName.toUpperCase(), x + 8, currentY + 12, {
+       width: width - 16
+     });
+
+  currentY += 30;
+
+  // Pass type with color indicator
+  doc.fontSize(7)
+     .fillColor('#666666')
+     .text('PASS TYPE:', x + 8, currentY);
+  
+  doc.rect(x + width - 50, currentY - 2, 40, 12)
+     .fillColor(passTypeColors.primary)
+     .fill();
+     
+  const textColor = passTypeColors.name === 'WHITE' ? '#000000' : '#FFFFFF';
+  doc.fontSize(6)
+     .fillColor(textColor)
+     .font('Helvetica-Bold')
+     .text(passTypeColors.name, x + width - 50, currentY + 1, {
+       width: 40,
+       align: 'center'
+     });
+
+  currentY += 20;
+
+  // Event date
+  doc.fontSize(6)
+     .fillColor('#666666')
+     .text('DATE:', x + 8, currentY);
+  
+  doc.fontSize(7)
+     .fillColor('#000000')
+     .text(new Date(safeDate).toLocaleDateString('en-IN'), x + 8, currentY + 8);
+
+  currentY += 22;
+
+  // QR Code section
+  const qrSize = Math.min(50, width * 0.3);
+  const qrX = x + width - qrSize - 8;
+  const qrY = currentY;
+  
+  doc.rect(qrX, qrY, qrSize, qrSize)
+     .strokeColor('#cccccc')
+     .stroke();
+  
+  if (qrCode) {
+    try {
+      let qrBuffer;
+      
+      if (qrCode.startsWith('http')) {
+        // For actual implementation, you'd download the QR code
+        // For now, just show placeholder
+        doc.fontSize(6)
+           .fillColor('#666666')
+           .text('QR\nCODE', qrX + 10, qrY + 18, {
+             align: 'center',
+             width: qrSize - 20
+           });
+      } else if (qrCode.startsWith('data:image')) {
+        // Handle base64 QR codes
+        doc.fontSize(6)
+           .fillColor('#666666')
+           .text('QR\nCODE', qrX + 10, qrY + 18, {
+             align: 'center', 
+             width: qrSize - 20
+           });
+      } else {
+        // Generate new QR code
+        const { generateQRCodeBuffer } = await import('./qrGenerator.js');
+        qrBuffer = await generateQRCodeBuffer(booking_id || ticket_number || 'TICKET-' + Date.now());
+        doc.image(qrBuffer, qrX + 2, qrY + 2, { fit: [qrSize - 4, qrSize - 4] });
+      }
+    } catch (qrError) {
+      console.warn('Compact QR generation failed:', qrError.message);
+      doc.fontSize(6)
+         .fillColor('#666666')
+         .text('QR\nUnavailable', qrX + 5, qrY + 18, {
+           align: 'center',
+           width: qrSize - 10
+         });
+    }
+  }
+
+  // Ticket number
+  doc.fontSize(6)
+     .fillColor('#999999')
+     .text(`#${ticketNumber}/${totalTickets}`, x + 8, currentY + qrSize - 8);
+
+  // Footer
+  const footerY = y + height - 15;
+  doc.fontSize(5)
+     .fillColor('#cccccc')
+     .text('🎟️ Scan QR for Entry | 7:00 PM onwards', x + 8, footerY, {
+       width: width - 16,
+       align: 'center'
+     });
+};
+
 // Backward compatibility - keeping the original function names
 export const generateTicketPDFBuffer = generateDandiyaTicketPDFBuffer;
 export const generateTicketPDF = generateDandiyaTicketPDF;
+
+// Export the color mapping function for testing
+export { getTicketColors };
 
 export default generateDandiyaTicketPDF;

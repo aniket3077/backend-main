@@ -174,6 +174,48 @@ export const createBooking = async (req, res) => {
       message: "Booking date must be a valid date"
     });
   }
+
+  // 🎟️ NEW TICKET PURCHASE VALIDATION RULES
+  // Check if male or kid tickets are being purchased alone (not allowed)
+  if (passes && typeof passes === 'object') {
+    // New format: multiple pass types
+    const passTypes = Object.keys(passes).filter(key => passes[key] > 0);
+    const hasOnlyMale = passTypes.length === 1 && passTypes[0] === 'male';
+    const hasOnlyKid = passTypes.length === 1 && (passTypes[0] === 'kids' || passTypes[0] === 'kid');
+    
+    if (hasOnlyMale) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid ticket selection",
+        message: "❌ Male tickets cannot be purchased alone. Please add other ticket types."
+      });
+    }
+    
+    if (hasOnlyKid) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid ticket selection", 
+        message: "❌ Kid tickets cannot be purchased alone. Please add other ticket types."
+      });
+    }
+  } else if (pass_type) {
+    // Old format: single pass type (backward compatibility)
+    if (pass_type === 'male') {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid ticket selection",
+        message: "❌ Male tickets cannot be purchased alone. Please add other ticket types."
+      });
+    }
+    
+    if (pass_type === 'kids' || pass_type === 'kid') {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid ticket selection",
+        message: "❌ Kid tickets cannot be purchased alone. Please add other ticket types."
+      });
+    }
+  }
   
   try {
 
@@ -613,7 +655,8 @@ export const testWhatsApp = async (req, res) => {
     phone, 
     name = 'Test User',
     bookingId = 'TEST-' + Date.now(),
-    passType = 'female'
+    passType = 'female',
+    numTickets = 1
   } = req.body;
   
   if (!phone) {
@@ -624,29 +667,52 @@ export const testWhatsApp = async (req, res) => {
   }
   
   try {
-    console.log(`🧪 Testing WhatsApp to: ${phone}`);
+    const ticketCount = parseInt(numTickets) || 1;
+    console.log(`🧪 Testing WhatsApp to: ${phone} with ${ticketCount} tickets`);
     
-    const testBookingDetails = {
-      bookingId: bookingId,
-      date: 'September 24, 2025',
-      time: '7:00 PM onwards',
-      venue: 'Event Ground, Malang',
-      passType: passType.toUpperCase(),
-      amount: 399,
-      ticketCount: 1
-    };
-
-    const result = await whatsappService.sendBookingConfirmation(
-      phone,
-      name,
-      testBookingDetails,
-      null // No PDF for test
-    );
+    // Send individual messages for each ticket (like the real booking flow)
+    const results = [];
+    
+    for (let ticketIndex = 1; ticketIndex <= ticketCount; ticketIndex++) {
+      try {
+        const result = await whatsappService.sendBookingConfirmation({
+          phone: phone,
+          name: name,
+          eventName: 'Malang Ras Dandiya 2025',
+          ticketCount: `${ticketIndex}/${ticketCount}`,
+          amount: '₹399',
+          bookingId: `${bookingId}-${ticketIndex}`,
+          ticketNumber: `TICKET-TEST-${String(ticketIndex).padStart(3, '0')}`
+        });
+        
+        results.push({
+          ticket: ticketIndex,
+          success: result.success,
+          messageId: result.messageId
+        });
+        
+        console.log(`✅ Test ticket ${ticketIndex}/${ticketCount} sent`);
+        
+        // Small delay between messages
+        if (ticketIndex < ticketCount) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+      } catch (ticketError) {
+        console.error(`❌ Failed test ticket ${ticketIndex}:`, ticketError);
+        results.push({
+          ticket: ticketIndex,
+          success: false,
+          error: ticketError.message
+        });
+      }
+    }
     
     res.json({ 
       success: true, 
-      message: `Test WhatsApp sent successfully to ${phone}`,
-      result: result,
+      message: `Test WhatsApp messages sent to ${phone}`,
+      totalTickets: ticketCount,
+      results: results,
       timestamp: new Date().toISOString()
     });
     
@@ -905,6 +971,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
             name: ticketUserName,
             date: booking.booking_date,
             pass_type: booking.pass_type,
+            ticket_type: booking.ticket_type || 'single', // Add ticket type for rainbow design
             qrCode: qrCodeData.qr_code_url,
             booking_id: booking.id.toString(),
             ticket_number: qrCodeData.ticket_number,
@@ -1004,38 +1071,59 @@ async function sendTicketNotifications(booking_id, payment_id) {
       try {
         const phoneNumber = primaryUser.phone.replace(/^\+?91|\s+/g, '');
         
+        console.log(`📱 Preparing to send ${booking.num_tickets} WhatsApp messages for booking ${booking.id}`);
 
-        // Generate PDF for WhatsApp attachment
-        let pdfBuffer = null;
-        try {
-          const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
-          const ticketData = {
-            name: primaryUser.name,
-            date: booking.booking_date,
-            pass_type: booking.pass_type,
-            qrCode: booking.qr_code,
-            booking_id: booking.id,
-            ticket_number: `TICKET-${booking.id}-001`
-          };
-          pdfBuffer = await generateTicketPDFBuffer(ticketData);
-          console.log('📄 Generated PDF for WhatsApp:', pdfBuffer ? `${pdfBuffer.length} bytes` : 'failed');
-        } catch (pdfError) {
-          console.error('❌ PDF generation failed for WhatsApp:', pdfError);
+        // Send individual WhatsApp message for each ticket
+        for (let ticketIndex = 1; ticketIndex <= booking.num_tickets; ticketIndex++) {
+          try {
+            // Generate PDF for each individual ticket
+            let pdfBuffer = null;
+            try {
+              const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
+              const ticketData = {
+                name: primaryUser.name,
+                date: booking.booking_date,
+                pass_type: booking.pass_type,
+                qrCode: booking.qr_code,
+                booking_id: booking.id,
+                ticket_number: `TICKET-${booking.id}-${String(ticketIndex).padStart(3, '0')}`,
+                ticket_index: ticketIndex,
+                total_tickets: booking.num_tickets
+              };
+              pdfBuffer = await generateTicketPDFBuffer(ticketData);
+              console.log(`📄 Generated PDF for ticket ${ticketIndex}/${booking.num_tickets}:`, pdfBuffer ? `${pdfBuffer.length} bytes` : 'failed');
+            } catch (pdfError) {
+              console.error(`❌ PDF generation failed for ticket ${ticketIndex}:`, pdfError);
+            }
+
+            // Send WhatsApp message for this specific ticket
+            const whatsappResult = await whatsappService.sendBookingConfirmation({
+              phone: phoneNumber,
+              name: primaryUser.name,
+              eventName: 'Dandiya Night',
+              ticketCount: `${ticketIndex}/${booking.num_tickets}`, // Show "1/2", "2/2" etc.
+              amount: `₹${payment?.amount || booking.final_amount || 0}`,
+              bookingId: `${booking.id}-${ticketIndex}`,
+              pdfBuffer: pdfBuffer,
+              ticketNumber: `TICKET-${booking.id}-${String(ticketIndex).padStart(3, '0')}`
+            });
+
+            console.log(`💬 WhatsApp ticket ${ticketIndex}/${booking.num_tickets} sent to:`, phoneNumber);
+            
+            // Small delay between messages to avoid rate limiting
+            if (ticketIndex < booking.num_tickets) {
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+            }
+            
+          } catch (ticketError) {
+            console.error(`❌ Failed to send WhatsApp for ticket ${ticketIndex}:`, ticketError);
+            // Continue with next ticket even if one fails
+          }
         }
 
-        await whatsappService.sendBookingConfirmation({
-          phone: phoneNumber,
-          name: primaryUser.name,
-          eventName: 'Dandiya Night',
-          ticketCount: booking.num_tickets,
-          amount: `₹${payment?.amount || booking.final_amount || 0}`,
-          bookingId: booking.id.toString(),
-          pdfBuffer: pdfBuffer
-        });
-
-        console.log('💬 WhatsApp notification sent to:', phoneNumber);
+        console.log(`✅ All ${booking.num_tickets} WhatsApp ticket messages sent to:`, phoneNumber);
       } catch (whatsappError) {
-        console.error('Failed to send WhatsApp message:', whatsappError);
+        console.error('Failed to send WhatsApp messages:', whatsappError);
       }
     }
 

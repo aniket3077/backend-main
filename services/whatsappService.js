@@ -68,7 +68,7 @@ class WhatsAppService {
     }
 
     try {
-      const { phone, name, eventName, ticketCount, amount, bookingId, pdfBuffer, pdfUrl } = data;
+      const { phone, name, eventName, ticketCount, amount, bookingId, pdfBuffer, pdfUrl, ticketNumber } = data;
       
       let formattedPhone = phone;
       if (!formattedPhone.startsWith('+')) {
@@ -77,17 +77,19 @@ class WhatsAppService {
       
       formattedPhone = formattedPhone.replace(/[^\d+]/g, '');
       
+      // Enhance template parameters to include ticket number for individual tickets
+      const ticketInfo = ticketNumber ? `Ticket #${ticketNumber}` : `${ticketCount} ticket(s)`;
+      const isMultipleTickets = String(ticketCount).includes('/'); // e.g., "1/2", "2/2"
 
       const payload = {
         apiKey: this.apiKey,
         campaignName: this.campaignName,
         destination: formattedPhone,
-
         userName: name || 'Guest',
         templateParams: [
           String(name || 'Guest'),
           String(eventName || 'Dandiya Night'),
-          String(ticketCount || '1'),
+          String(isMultipleTickets ? `Ticket ${ticketCount}` : ticketInfo),
           String(amount || '₹399'),
           String(bookingId || 'N/A'),
           'Regal Lawns, Beed Bypass'
