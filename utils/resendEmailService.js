@@ -102,9 +102,22 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
       </html>
     `;
 
-    // Use Resend's default domain for testing (no verification needed)
+    // Email configuration - Use custom domain if verified, fallback to Resend default
     const fromName = process.env.EMAIL_FROM_NAME || 'Malang Dandiya';
-    const fromEmail = 'onboarding@resend.dev'; // Resend's default verified domain
+    const emailDomain = process.env.EMAIL_DOMAIN || 'resend.dev';
+    const fromAddress = process.env.EMAIL_FROM_ADDRESS;
+    
+    let fromEmail;
+    
+    // If custom domain and address are configured, try to use them
+    if (emailDomain !== 'resend.dev' && fromAddress && fromAddress.includes('@')) {
+      fromEmail = fromAddress;
+      console.log(`📧 Using custom domain email: ${fromEmail}`);
+    } else {
+      // Use Resend's default verified domain for reliability
+      fromEmail = 'onboarding@resend.dev';
+      console.log(`📧 Using Resend default domain: ${fromEmail}`);
+    }
 
     const emailData = {
       from: `${fromName} <${fromEmail}>`,
@@ -121,11 +134,30 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
     const result = await resend.emails.send(emailData);
     
     console.log('📧 Resend API Response:', JSON.stringify(result, null, 2));
+    
+    // Check for API errors in the response
+    if (result.error) {
+      console.error('❌ Resend API error:', result.error);
+      
+      // Handle specific error cases  
+      if (result.error.name === 'validation_error' || result.error.message?.includes('403')) {
+        console.error('🚨 Possible causes for 403/validation error:');
+        console.error('   1. Domain not verified in Resend dashboard');
+        console.error('   2. API key permissions insufficient');
+        console.error('   3. From email address not matching verified domain');
+        console.error(`   Current from: ${emailData.from}`);
+        console.error(`   Current domain: ${emailDomain}`);
+      }
+      
+      throw new Error(`Resend API error: ${result.error.message || result.error}`);
+    }
+    
     console.log('✅ Email sent successfully via Resend:', result.data?.id || result.id || 'Email ID not available');
     return {
       success: true,
       messageId: result.data?.id || result.id,
-      service: 'resend'
+      service: 'resend',
+      from_email: fromEmail
     };
 
   } catch (error) {
