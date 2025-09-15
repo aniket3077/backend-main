@@ -176,6 +176,10 @@ export const createBooking = async (req, res) => {
     // Calculate pricing with bulk discount using auto-adjusted ticket count
     const priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
     
+    // Extract values from priceInfo
+    const totalAmount = priceInfo.totalAmount;
+    const totalDiscount = priceInfo.savings || 0;
+    
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
       num_tickets: parseInt(finalTicketCount),
