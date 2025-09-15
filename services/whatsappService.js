@@ -12,8 +12,17 @@ class WhatsAppService {
     this.apiUrl = process.env.AISENSY_API_URL;
     this.campaignName = process.env.AISENSY_CAMPAIGN_NAME;
     
+    console.log('🔧 Initializing WhatsApp Service...');
+    console.log('🔑 API Key:', this.apiKey ? '***configured***' : 'MISSING');
+    console.log('🌐 API URL:', this.apiUrl || 'MISSING');
+    console.log('📋 Campaign:', this.campaignName || 'MISSING');
+    
     if (!this.apiKey || !this.apiUrl || !this.campaignName) {
       console.warn('⚠️ WhatsApp service not fully configured');
+      console.warn('⚠️ Required environment variables:');
+      console.warn('   - AISENSY_API_KEY:', this.apiKey ? '✅' : '❌');
+      console.warn('   - AISENSY_API_URL:', this.apiUrl ? '✅' : '❌');
+      console.warn('   - AISENSY_CAMPAIGN_NAME:', this.campaignName ? '✅' : '❌');
       this.isConfigured = false;
     } else {
       this.isConfigured = true;
@@ -142,12 +151,28 @@ class WhatsAppService {
       };
 
     } catch (error) {
-
-      console.error('❌ WhatsApp sending failed:', error.response?.data || error.message);
+      console.error('❌ WhatsApp sending failed:');
+      console.error('   Error type:', error.name);
+      console.error('   Error message:', error.message);
+      if (error.response) {
+        console.error('   Status code:', error.response.status);
+        console.error('   Response data:', error.response.data);
+        console.error('   Response headers:', error.response.headers);
+      }
+      if (error.config) {
+        console.error('   Request URL:', error.config.url);
+        console.error('   Request method:', error.config.method);
+      }
       
       return {
         success: false,
         error: error.response?.data?.message || error.message,
+        errorDetails: {
+          type: error.name,
+          status: error.response?.status,
+          data: error.response?.data,
+          timeout: error.code === 'ECONNABORTED'
+        },
         service: 'aisensy'
       };
     }

@@ -53,6 +53,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve static files (PDF tickets) for WhatsApp attachments
+app.use('/tickets', express.static('tickets'));
+
 // Initialize database connection on startup
 let dbStatus = { connected: false, error: null, lastChecked: null };
 
@@ -134,6 +137,41 @@ app.post('/api/bookings/confirm-payment', async (req, res) => {
     console.error('Confirm payment error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Test WhatsApp endpoint
+app.post('/api/bookings/test-whatsapp', async (req, res) => {
+  try {
+    await bookingController.testWhatsApp(req, res);
+  } catch (error) {
+    console.error('Test WhatsApp error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// WhatsApp configuration check endpoint
+app.get('/api/config/whatsapp', (req, res) => {
+  const config = {
+    aisensy: {
+      configured: !!(process.env.AISENSY_API_KEY && process.env.AISENSY_API_URL && process.env.AISENSY_CAMPAIGN_NAME),
+      apiKey: process.env.AISENSY_API_KEY ? '***configured***' : 'missing',
+      apiUrl: process.env.AISENSY_API_URL ? process.env.AISENSY_API_URL : 'missing',
+      campaignName: process.env.AISENSY_CAMPAIGN_NAME ? process.env.AISENSY_CAMPAIGN_NAME : 'missing',
+      validKey: !!(process.env.AISENSY_API_KEY && process.env.AISENSY_API_KEY !== 'your-aisensy-api-key')
+    },
+    server: {
+      serverUrl: process.env.SERVER_URL || process.env.PUBLIC_URL || 'missing',
+      railwayUrl: process.env.RAILWAY_URL || 'missing',
+      environment: process.env.NODE_ENV || 'development'
+    },
+    timestamp: new Date().toISOString()
+  };
+  
+  res.json({
+    success: true,
+    message: 'WhatsApp configuration status',
+    config
+  });
 });
 
 // Test database endpoint
@@ -250,6 +288,8 @@ app.use((req, res) => {
       addUsers: 'POST /api/bookings/add-users',
       createPayment: 'POST /api/bookings/create-payment',
       confirmPayment: 'POST /api/bookings/confirm-payment',
+      testWhatsApp: 'POST /api/bookings/test-whatsapp',
+      whatsappConfig: 'GET /api/config/whatsapp',
       testDb: 'GET /api/test-db'
     }
   });
