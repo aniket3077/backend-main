@@ -137,12 +137,27 @@ export const createBooking = async (req, res) => {
     totalTickets = Number(num_tickets);
   }
   
+  // Auto-set ticket quantities based on pass type
+  let finalTicketCount = num_tickets;
+  if (pass_type === 'couple') {
+    finalTicketCount = 2;
+    console.log('🎫 Auto-setting couple tickets to 2');
+  } else if (pass_type === 'family' || pass_type === 'family4') {
+    finalTicketCount = 4;
+    console.log('🎫 Auto-setting family tickets to 4');
+  } else {
+    finalTicketCount = num_tickets || 1;
+  }
+  
   // Validate required fields
-  if (!booking_date || totalTickets === 0) {
+
+  if (!booking_date || !pass_type) {
     return res.status(400).json({
       success: false,
       error: "Missing required fields",
-      message: "booking_date and at least one pass type with tickets are required"
+      message: "booking_date and pass_type are required"
+
+  
     });
   }
 
@@ -157,39 +172,14 @@ export const createBooking = async (req, res) => {
   }
   
   try {
-    // Calculate total pricing for all pass types
-    let totalAmount = 0;
-    let totalDiscount = 0;
-    let discountApplied = false;
-    let passDetails = [];
-    
-    for (const [passType, count] of Object.entries(bookingPasses)) {
-      const passCount = Number(count);
-      if (passCount > 0) {
-        try {
-          const priceInfo = calculateTicketPrice(passType, ticket_type, passCount);
-          totalAmount += priceInfo.totalAmount;
-          totalDiscount += priceInfo.savings || 0;
-          if (priceInfo.discountApplied) discountApplied = true;
-          
-          passDetails.push({
-            pass_type: passType,
-            num_tickets: passCount,
-            base_price: priceInfo.basePrice,
-            final_price: priceInfo.finalPrice,
-            discount: priceInfo.savings || 0
-          });
-        } catch (priceError) {
-          console.warn(`Warning: Could not calculate price for ${passType}: ${priceError.message}`);
-          // Continue with other pass types
-        }
-      }
-    }
+
+    // Calculate pricing with bulk discount using auto-adjusted ticket count
+    const priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
     
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
-      passes: bookingPasses,
-      total_tickets: totalTickets,
+      num_tickets: parseInt(finalTicketCount),
+      pass_type,
       ticket_type,
       total_amount: totalAmount,
       discount: totalDiscount,
@@ -241,8 +231,10 @@ export const createBooking = async (req, res) => {
       RETURNING *
     `, [
       parsedDate, 
-      totalTickets, 
-      primaryPassType, 
+
+      parseInt(finalTicketCount), 
+      pass_type, 
+
       ticket_type,
       'pending', 
       totalAmount, 
@@ -290,12 +282,17 @@ export const createBooking = async (req, res) => {
       // Database is offline, create mock booking
       console.log('⚠️ Database offline - creating mock booking');
       const mockBookingId = Date.now().toString();
+
+      const totalAmount = computeTotalAmount(pass_type, finalTicketCount) || 0;
+
       
       const mockBooking = {
         id: mockBookingId,
         booking_date: parsedDate.toISOString(),
-        num_tickets: totalTickets,
-        pass_type: primaryPassType,
+
+        num_tickets: parseInt(finalTicketCount),
+        pass_type,
+
         status: 'pending',
         total_amount: totalAmount,
         discount_amount: totalDiscount,
@@ -983,37 +980,35 @@ async function sendTicketNotifications(booking_id, payment_id) {
       try {
         const phoneNumber = primaryUser.phone.replace(/^\+?91|\s+/g, '');
         
-        // Prepare booking details for AiSensy template
-        const bookingDetails = {
-          bookingId: booking.id.toString(),
-          date: new Date(booking.booking_date).toLocaleDateString('en-IN', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          }),
-          time: '7:00 PM onwards',
-          venue: 'Event Ground, Malang',
-          passType: booking.pass_type.toUpperCase(),
-          amount: payment?.amount || booking.final_amount || 0,
-          ticketCount: booking.num_tickets
-        };
 
-        // Generate PDF URL for WhatsApp attachment (if available)
-        let pdfUrl = null;
-        if (pdfAttachments && pdfAttachments.length > 0) {
-          // You would need to upload the PDF to a public URL first
-          // For now, we'll send without PDF attachment
-          console.log('📎 PDF available but URL upload not implemented yet');
+        // Generate PDF for WhatsApp attachment
+        let pdfBuffer = null;
+        try {
+          const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
+          const ticketData = {
+            name: primaryUser.name,
+            date: booking.booking_date,
+            pass_type: booking.pass_type,
+            qrCode: booking.qr_code,
+            booking_id: booking.id,
+            ticket_number: `TICKET-${booking.id}-001`
+          };
+          pdfBuffer = await generateTicketPDFBuffer(ticketData);
+          console.log('📄 Generated PDF for WhatsApp:', pdfBuffer ? `${pdfBuffer.length} bytes` : 'failed');
+        } catch (pdfError) {
+          console.error('❌ PDF generation failed for WhatsApp:', pdfError);
         }
 
-        await whatsappService.sendBookingConfirmation(
-          phoneNumber,
-          primaryUser.name,
-          bookingDetails,
-          pdfUrl
-        );
-        
+        await whatsappService.sendBookingConfirmation({
+          phone: phoneNumber,
+          name: primaryUser.name,
+          eventName: 'Dandiya Night',
+          ticketCount: booking.num_tickets,
+          amount: `₹${payment?.amount || booking.final_amount || 0}`,
+          bookingId: booking.id.toString(),
+          pdfBuffer: pdfBuffer
+        });
+
         console.log('💬 WhatsApp notification sent to:', phoneNumber);
       } catch (whatsappError) {
         console.error('Failed to send WhatsApp message:', whatsappError);

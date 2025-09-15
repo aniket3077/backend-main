@@ -116,22 +116,34 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
           </div>
           
           <div class="footer">
-            <p>For any queries, contact us at support@malangevents.com</p>
-            <p>© 2025 Malang Events. All rights reserved.</p>
-            <p>Visit us: <a href="https://malangevents.com" style="color: #d4af37;">malangevents.com</a></p>
+
+            <p>For any queries, contact us at admin@malangevents.com</p>
+            <p>© 2025 Malang Raas Dandiya. All rights reserved.</p>
+
           </div>
         </div>
       </body>
       </html>
     `;
 
-    // Production email configuration - allow any verified domain
-    const fromName = process.env.EMAIL_FROM_NAME || 'Malang Events';
-    const fromEmail = process.env.EMAIL_FROM_ADDRESS || 'noreply@malangevents.com';
+
+    // Email configuration - Use verified custom domain
+    const fromName = process.env.EMAIL_FROM_NAME || 'Malang Dandiya';
+    const emailDomain = process.env.EMAIL_DOMAIN || 'malangevents.com';
+    const fromAddress = process.env.EMAIL_FROM_ADDRESS;
     
-    // Log the from email for debugging
-    console.log(`📧 Sending from: ${fromName} <${fromEmail}>`);
-    console.log(`📧 Sending to: ${toEmail}`);
+    let fromEmail;
+    
+    // Use the verified custom domain (malangevents.com)
+    if (fromAddress && fromAddress.includes('@malangevents.com')) {
+      fromEmail = fromAddress;
+      console.log(`📧 Using verified custom domain: ${fromEmail}`);
+    } else {
+      // Default to noreply@malangevents.com for verified domain
+      fromEmail = `noreply@malangevents.com`;
+      console.log(`📧 Using verified domain default: ${fromEmail}`);
+    }
+
 
     const emailData = {
       from: `${fromName} <${fromEmail}>`,
@@ -147,14 +159,33 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
 
     const result = await resend.emails.send(emailData);
     
-    console.log('📧 Production Email Sent Successfully!');
-    console.log('📧 Message ID:', result.data?.id || result.id || 'ID not available');
+
+    console.log('📧 Resend API Response:', JSON.stringify(result, null, 2));
     
+    // Check for API errors in the response
+    if (result.error) {
+      console.error('❌ Resend API error:', result.error);
+      
+      // Handle specific error cases  
+      if (result.error.name === 'validation_error' || result.error.message?.includes('403')) {
+        console.error('🚨 Possible causes for 403/validation error:');
+        console.error('   1. Domain not verified in Resend dashboard');
+        console.error('   2. API key permissions insufficient');
+        console.error('   3. From email address not matching verified domain');
+        console.error(`   Current from: ${emailData.from}`);
+        console.error(`   Current domain: ${emailDomain}`);
+      }
+      
+      throw new Error(`Resend API error: ${result.error.message || result.error}`);
+    }
+    
+    console.log('✅ Email sent successfully via Resend:', result.data?.id || result.id || 'Email ID not available');
     return {
       success: true,
       messageId: result.data?.id || result.id,
-      service: 'resend_production',
-      timestamp: new Date().toISOString()
+      service: 'resend',
+      from_email: fromEmail
+
     };
 
   } catch (error) {

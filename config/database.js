@@ -33,14 +33,15 @@ if (!process.env.DATABASE_URL) {
       rejectUnauthorized: false,
       sslmode: 'require'
     } : undefined,
-    max: 5, // Reduced for Railway serverless
-    idleTimeoutMillis: 10000, // Reduced for serverless
-    connectionTimeoutMillis: 5000, // Faster fail for serverless
-    statement_timeout: 10000,
-    query_timeout: 10000,
+    max: 10, // Increased pool size for better concurrency
+    idleTimeoutMillis: 30000, // Increased to 30 seconds
+    connectionTimeoutMillis: 15000, // Increased to 15 seconds  
+    statement_timeout: 30000, // Increased to 30 seconds
+    query_timeout: 30000, // Increased to 30 seconds
     // Force IPv4 connection
     family: 4,
-    keepAlive: false, // Disable for serverless
+    keepAlive: true, // Enable keepalive for better connection stability
+    keepAliveInitialDelayMillis: 10000,
   };
 
   console.log('� Attempting database connection to:', `${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
@@ -50,6 +51,19 @@ if (!process.env.DATABASE_URL) {
   // Prevent crashes on pool errors
   pool.on('error', (err) => {
     console.error('🔌 PG Pool error (non-fatal):', err.message);
+  });
+
+  // Monitor pool connection health
+  pool.on('connect', (client) => {
+    console.log('🔗 New database client connected');
+  });
+
+  pool.on('acquire', (client) => {
+    console.log('🎯 Database client acquired from pool');
+  });
+
+  pool.on('remove', (client) => {
+    console.log('🔚 Database client removed from pool');
   });
 
   // Test database connection
@@ -94,28 +108,50 @@ if (!process.env.DATABASE_URL) {
     }
   };
 
-  // Execute query with error handling
+  // Execute query with error handling and retry logic
   query = async (text, params) => {
     let client;
-    try {
-      client = await pool.connect();
-      const result = await client.query(text, params);
-      return result;
-    } catch (err) {
-      console.error('Database query error:', err.message);
-      console.error('Query:', text);
-      console.error('Params:', params);
-      
-      // Don't throw the error for common connectivity issues; use offline mode
-      if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED' || err.code === '57P01') {
-        console.log('🔄 Database unavailable, returning empty result (offline mode)');
-        return { rows: [], rowCount: 0 };
-      }
-      
-      throw err;
-    } finally {
-      if (client) {
-        client.release();
+    let retries = 3;
+    
+    while (retries > 0) {
+      try {
+        client = await pool.connect();
+        const result = await client.query(text, params);
+        return result;
+      } catch (err) {
+        console.error(`Database query error (${retries} retries left):`, err.message);
+        console.error('Query:', text);
+        console.error('Params:', params);
+        
+        // Handle connection timeout/termination errors with retry
+        if (err.message.includes('Connection terminated') || 
+            err.message.includes('connection timeout') ||
+            err.code === 'ECONNRESET' || 
+            err.code === 'ETIMEDOUT') {
+          
+          retries--;
+          if (retries > 0) {
+            console.log(`🔄 Retrying database query in 1 second... (${retries} attempts left)`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
+        }
+        
+        // Don't throw the error for common connectivity issues; use offline mode
+        if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED' || err.code === '57P01') {
+          console.log('🔄 Database unavailable, returning empty result (offline mode)');
+          return { rows: [], rowCount: 0 };
+        }
+        
+        throw err;
+      } finally {
+        if (client) {
+          try {
+            client.release();
+          } catch (releaseErr) {
+            console.warn('Warning: Error releasing database client:', releaseErr.message);
+          }
+        }
       }
     }
   };
