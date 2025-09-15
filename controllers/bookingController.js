@@ -181,6 +181,19 @@ export const createBooking = async (req, res) => {
     const totalDiscount = priceInfo.savings || 0;
     const discountApplied = priceInfo.discountApplied;
     
+    // Define pass details for JSON storage
+    const passDetails = {
+      pass_type,
+      ticket_type,
+      num_tickets: finalTicketCount,
+      total_amount: totalAmount,
+      discount_amount: totalDiscount,
+      final_price: priceInfo.finalPrice,
+      base_price: priceInfo.basePrice,
+      discount_applied: discountApplied,
+      booking_date: parsedDate.toISOString()
+    };
+    
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
       num_tickets: parseInt(finalTicketCount),
