@@ -302,7 +302,28 @@ export const createBooking = async (req, res) => {
 export const addUserDetails = async (req, res) => {
   const { booking_id, name, email, phone, is_primary = false } = req.body;
   
+  // Validate required fields
+  if (!booking_id || !name) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "booking_id and name are required" 
+    });
+  }
+  
   try {
+    // First, check if the booking exists
+    const bookingCheck = await query(`
+      SELECT id FROM bookings WHERE id = $1
+    `, [parseInt(booking_id)]);
+    
+    if (bookingCheck.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Booking with ID ${booking_id} not found. Please create the booking first.` 
+      });
+    }
+    
+    // If booking exists, proceed to add user
     const result = await query(`
       INSERT INTO users (booking_id, name, email, phone, is_primary)
       VALUES ($1, $2, $3, $4, $5)
@@ -321,6 +342,23 @@ export const addUserDetails = async (req, res) => {
     res.status(201).json({ success: true, user: userResponse });
   } catch (err) {
     console.error("Error adding user details:", err);
+    
+    // Handle specific database errors
+    if (err.code === '23503') { // Foreign key constraint violation
+      return res.status(400).json({ 
+        success: false, 
+        error: `Invalid booking_id: ${booking_id}. Booking not found.`,
+        code: 'BOOKING_NOT_FOUND'
+      });
+    }
+    
+    if (err.code === '23505') { // Unique constraint violation
+      return res.status(400).json({ 
+        success: false, 
+        error: "User with this email already exists for this booking",
+        code: 'DUPLICATE_USER'
+      });
+    }
     
     // Check if this is a database connection error
     const isConnectionError = err.code === 'ENETUNREACH' || 
@@ -355,7 +393,159 @@ export const addUserDetails = async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: "Failed to add user details",
+      details: err.message,
+    });
+  }
+};
+
+// Helper function to get booking details
+export const getBookingDetails = async (req, res) => {
+  const { booking_id } = req.params;
+  
+  if (!booking_id) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "booking_id is required" 
+    });
+  }
+  
+  try {
+    const result = await query(`
+      SELECT 
+        b.*,
+        COUNT(u.id) as user_count,
+        COUNT(q.id) as qr_count
+      FROM bookings b
+      LEFT JOIN users u ON b.id = u.booking_id
+      LEFT JOIN qr_codes q ON b.id = q.booking_id
+      WHERE b.id = $1
+      GROUP BY b.id
+    `, [parseInt(booking_id)]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Booking with ID ${booking_id} not found` 
+      });
+    }
+    
+    const booking = result.rows[0];
+    
+    // Convert BigInt fields to strings for JSON serialization
+    const bookingResponse = {
+      ...booking,
+      id: booking.id.toString(),
+      user_count: parseInt(booking.user_count),
+      qr_count: parseInt(booking.qr_count)
+    };
+    
+    res.json({ success: true, booking: bookingResponse });
+  } catch (err) {
+    console.error("Error getting booking details:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to get booking details",
       details: err.message 
+    });
+  }
+};
+
+// Test email endpoint - allows sending test emails to any address
+export const testEmail = async (req, res) => {
+  const { email, name = 'Test User', subject = 'Test Email from Malang Events' } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "email is required" 
+    });
+  }
+  
+  try {
+    console.log(`🧪 Testing email to: ${email}`);
+    
+    const emailResult = await sendTicketEmail(
+      email,
+      subject,
+      name,
+      [] // No attachments for test
+    );
+    
+    // Handle frontend-like response format
+    res.json({ 
+      success: true, 
+      message: `Test email sent successfully to ${email}`,
+      data: emailResult.data || {},
+      meta: emailResult.meta || {},
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Test email failed:', error);
+    
+    // Handle frontend-like error format
+    const statusCode = error.code === 'INVALID_EMAIL_FORMAT' ? 400 : 
+                      error.code === 'SERVICE_UNAVAILABLE' ? 503 : 500;
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      error: error.message || "Failed to send test email",
+      code: error.code || 'EMAIL_SEND_FAILED',
+      details: error.originalError || error.message,
+      timestamp: error.timestamp || new Date().toISOString()
+    });
+  }
+};
+
+// Test WhatsApp endpoint - allows sending test WhatsApp messages to any number
+export const testWhatsApp = async (req, res) => {
+  const { 
+    phone, 
+    name = 'Test User',
+    bookingId = 'TEST-' + Date.now(),
+    passType = 'female'
+  } = req.body;
+  
+  if (!phone) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "phone number is required" 
+    });
+  }
+  
+  try {
+    console.log(`🧪 Testing WhatsApp to: ${phone}`);
+    
+    const testBookingDetails = {
+      bookingId: bookingId,
+      date: 'September 24, 2025',
+      time: '7:00 PM onwards',
+      venue: 'Event Ground, Malang',
+      passType: passType.toUpperCase(),
+      amount: 399,
+      ticketCount: 1
+    };
+
+    const result = await whatsappService.sendBookingConfirmation(
+      phone,
+      name,
+      testBookingDetails,
+      null // No PDF for test
+    );
+    
+    res.json({ 
+      success: true, 
+      message: `Test WhatsApp sent successfully to ${phone}`,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Test WhatsApp failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to send test WhatsApp",
+      details: error.message 
     });
   }
 };
@@ -581,37 +771,40 @@ async function sendTicketNotifications(booking_id, payment_id) {
     const qrCode = booking.qr_codes.length > 0 ? booking.qr_codes[0] : null;
     const payment = booking.payments.length > 0 ? booking.payments[0] : null;
 
-    // Generate PDF tickets for all QR codes (multiple tickets)
+    // Generate PDF tickets for all QR codes (single PDF with multiple tickets)
     let pdfAttachments = [];
     try {
       if (booking.qr_codes && booking.qr_codes.length > 0) {
-        const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
+        const { generateMultipleTicketsPDFBuffer } = await import("../utils/pdfGenerator.js");
         
-        // Generate a PDF for each ticket/QR code
-        for (let i = 0; i < booking.qr_codes.length; i++) {
-          const qrCodeData = booking.qr_codes[i];
+        // Prepare ticket data for all tickets in this booking
+        const ticketsData = booking.qr_codes.map((qrCodeData, i) => {
           const ticketUserName = booking.users[i]?.name || primaryUser.name;
           
-          const pdfBuffer = await generateTicketPDFBuffer({
+          return {
             name: ticketUserName,
             date: booking.booking_date,
             pass_type: booking.pass_type,
             qrCode: qrCodeData.qr_code_url,
             booking_id: booking.id.toString(),
-            ticket_number: qrCodeData.ticket_number
-          });
-          
-          pdfAttachments.push({
-            filename: `Dandiya_Ticket_${booking.id}_${i + 1}.pdf`,
-            content: pdfBuffer,
-            contentType: 'application/pdf'
-          });
-        }
+            ticket_number: qrCodeData.ticket_number,
+            venue: "Event Ground, Malang"
+          };
+        });
         
-        console.log(`📄 Generated ${pdfAttachments.length} PDF tickets successfully`);
+        // Generate a single PDF containing all tickets
+        const pdfBuffer = await generateMultipleTicketsPDFBuffer(ticketsData);
+        
+        pdfAttachments.push({
+          filename: `Dandiya_Tickets_${booking.id}_All_${booking.qr_codes.length}_Tickets.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        });
+        
+        console.log(`📄 Generated single PDF with ${booking.qr_codes.length} tickets successfully`);
       }
     } catch (pdfError) {
-      console.error('Error generating PDFs:', pdfError);
+      console.error('Error generating PDF:', pdfError);
       // Continue with other notifications even if PDF generation fails
     }
 
@@ -631,15 +824,31 @@ async function sendTicketNotifications(booking_id, payment_id) {
           emailData.attachments = pdfAttachments;
         }
         
-        await sendTicketEmail(
+        const emailResult = await sendTicketEmail(
           primaryUser.email,
           `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
           primaryUser.name,
           emailData.attachments
         );
-        console.log(`📧 Email notification sent to: ${primaryUser.email} with ${pdfAttachments.length} ticket PDFs`);
+        
+        // Log success with frontend-like details
+        const attachmentDescription = pdfAttachments.length > 0 
+          ? `with 1 PDF containing all ${booking.num_tickets} tickets`
+          : 'without PDF attachment (generation failed)';
+        console.log(`📧 Email notification sent successfully!`);
+        console.log(`📧 Recipient: ${primaryUser.email}`);
+        console.log(`📧 Message ID: ${emailResult.data?.messageId || 'N/A'}`);
+        console.log(`📧 Attachments: ${attachmentDescription}`);
+        console.log(`📧 Service: ${emailResult.meta?.service || 'resend'}`);
+        
       } catch (emailError) {
         console.error('Failed to send email:', emailError);
+        console.error('📧 Error Code:', emailError.code || 'UNKNOWN');
+        console.error('📧 User-friendly message:', emailError.message);
+        console.error('📧 Technical details:', emailError.originalError || emailError.message);
+        
+        // Continue with booking process even if email fails
+        // Could optionally log this failure for later retry
       }
     }
 
@@ -647,20 +856,38 @@ async function sendTicketNotifications(booking_id, payment_id) {
     if (primaryUser.phone) {
       try {
         const phoneNumber = primaryUser.phone.replace(/^\+?91|\s+/g, '');
-        const message = `🎉 Your Dandiya Night booking #${booking.id} is confirmed!\n\n` +
-          `📅 Date: ${new Date(booking.booking_date).toLocaleDateString()}\n` +
-          `🎟️ Tickets: ${booking.num_tickets} ${booking.pass_type} pass\n` +
-          `💰 Amount: ₹${payment?.amount || booking.final_amount || 0}\n\n` +
-          `Show this QR code at the entrance.`;
-
-        await whatsappService.sendBookingConfirmation({
-          phoneNumber: phoneNumber,
-          customerName: primaryUser.name,
-          eventName: 'Dandiya Night',
-          ticketCount: booking.num_tickets,
+        
+        // Prepare booking details for AiSensy template
+        const bookingDetails = {
           bookingId: booking.id.toString(),
-          pdfPath: null // Will be handled by WhatsApp service
-        });
+          date: new Date(booking.booking_date).toLocaleDateString('en-IN', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          }),
+          time: '7:00 PM onwards',
+          venue: 'Event Ground, Malang',
+          passType: booking.pass_type.toUpperCase(),
+          amount: payment?.amount || booking.final_amount || 0,
+          ticketCount: booking.num_tickets
+        };
+
+        // Generate PDF URL for WhatsApp attachment (if available)
+        let pdfUrl = null;
+        if (pdfAttachments && pdfAttachments.length > 0) {
+          // You would need to upload the PDF to a public URL first
+          // For now, we'll send without PDF attachment
+          console.log('📎 PDF available but URL upload not implemented yet');
+        }
+
+        await whatsappService.sendBookingConfirmation(
+          phoneNumber,
+          primaryUser.name,
+          bookingDetails,
+          pdfUrl
+        );
+        
         console.log('💬 WhatsApp notification sent to:', phoneNumber);
       } catch (whatsappError) {
         console.error('Failed to send WhatsApp message:', whatsappError);

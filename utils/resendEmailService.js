@@ -3,21 +3,29 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Initialize Resend client with better error handling
+// Initialize Resend client for production
 let resend = null;
 try {
-  console.log('🔍 Checking Resend API key:', process.env.RESEND_API_KEY ? 'Present' : 'Missing');
+  console.log('🔍 Initializing Resend for production...');
   
-  if (process.env.RESEND_API_KEY && 
-      process.env.RESEND_API_KEY !== 'your_resend_api_key_here' && 
-      process.env.RESEND_API_KEY.startsWith('re_')) {
-    resend = new Resend(process.env.RESEND_API_KEY);
-    console.log('✅ Resend email service initialized with API key');
-  } else {
-    console.log('⚠️ Resend API key not configured or invalid - using mock email service');
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY environment variable is required for production');
   }
+  
+  if (process.env.RESEND_API_KEY === 'your_resend_api_key_here') {
+    throw new Error('Please set a valid RESEND_API_KEY in your environment variables');
+  }
+  
+  if (!process.env.RESEND_API_KEY.startsWith('re_')) {
+    throw new Error('Invalid Resend API key format. Key should start with "re_"');
+  }
+  
+  resend = new Resend(process.env.RESEND_API_KEY);
+  console.log('✅ Resend email service initialized for production');
+  
 } catch (error) {
-  console.error('❌ Failed to initialize Resend:', error.message);
+  console.error('❌ Failed to initialize Resend for production:', error.message);
+  console.error('❌ Email service will not work without proper Resend configuration');
   resend = null;
 }
 
@@ -26,24 +34,29 @@ function isResendConfigured() {
 }
 
 async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
-  // If Resend is not configured, use mock email service for development
+  // Production mode - Resend must be configured
   if (!resend) {
-    console.log('📧 Using mock email service (Resend not configured)');
-    console.log(`   To: ${toEmail}`);
-    console.log(`   Subject: ${subject}`);
-    console.log(`   User: ${userName}`);
-    console.log(`   Attachments: ${attachments ? attachments.length : 0}`);
-    
-    return {
-      success: true,
-      messageId: `mock_${Date.now()}`,
-      service: 'mock',
-      message: 'Email sent via mock service - configure RESEND_API_KEY for real emails'
-    };
+    const error = new Error('Email service not available - Resend API key not configured properly');
+    console.error('❌ Production email failure:', error.message);
+    throw error;
+  }
+
+  // Basic email validation - allow all valid email formats
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!toEmail || !emailRegex.test(toEmail.trim())) {
+    throw new Error(`Invalid email format: ${toEmail}`);
+  }
+  
+  if (!subject || subject.trim().length === 0) {
+    throw new Error('Email subject is required');
   }
 
   try {
-    console.log(`📧 Sending email to: ${toEmail}`);
+    console.log(`📧 Sending production email...`);
+    console.log(`📧 To: ${toEmail}`);
+    console.log(`📧 Subject: ${subject}`);
+    console.log(`📧 User: ${userName || 'N/A'}`);
+    console.log(`📧 Attachments: ${attachments ? attachments.length : 0}`);
     
     const htmlContent = `
       <!DOCTYPE html>
@@ -62,6 +75,7 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
         <div class="container">
           <div class="header">
             <h1>🎉 Malang Raas Dandiya 2025</h1>
+            <p>Your Official Event Tickets</p>
           </div>
           <div class="content">
             <p>Dear ${userName},</p>
@@ -75,36 +89,49 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
               <p><strong>Time:</strong> 7:00 PM onwards</p>
             </div>
             
-            <p>🎫 Your e-ticket${attachments && attachments.length > 1 ? 's are' : ' is'} attached to this email. Please present the QR code${attachments && attachments.length > 1 ? 's' : ''} at the entrance for quick entry.</p>
+            <p>🎫 Your e-ticket${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 's are' : ' is'} attached to this email as a single PDF file. Please present the QR code${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 's' : ''} at the entrance for quick entry.</p>
             
-            ${attachments && attachments.length > 1 ? 
+            ${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 
+              `<p><strong>📋 Your booking contains multiple tickets in one PDF:</strong></p>
+               <ul>
+                 <li>One PDF file with all your ${attachments[0].filename.match(/_(\d+)_Tickets/)?.[1] || 'multiple'} tickets</li>
+                 <li>Each ticket has its individual QR code for entry</li>
+                 <li>Cover page with booking summary and instructions</li>
+               </ul>` 
+              : attachments && attachments.length > 1 ? 
               `<p><strong>📋 You have ${attachments.length} tickets attached:</strong></p>
                <ul>${attachments.map((_, index) => `<li>Ticket ${index + 1} - Individual QR code for entry</li>`).join('')}</ul>` 
               : ''}
             
             <p><strong>Important Notes:</strong></p>
             <ul>
-              <li>Keep your ticket${attachments && attachments.length > 1 ? 's' : ''} safe and bring ${attachments && attachments.length > 1 ? 'them' : 'it'} to the event</li>
+              <li>Keep your ticket${attachments && ((attachments.length === 1 && attachments[0].filename.includes('All_')) || attachments.length > 1) ? 's' : ''} safe and bring ${attachments && ((attachments.length === 1 && attachments[0].filename.includes('All_')) || attachments.length > 1) ? 'them' : 'it'} to the event</li>
               <li>Entry is subject to QR code verification</li>
               <li>Gates open at 7:00 PM</li>
-              ${attachments && attachments.length > 1 ? '<li>Each person needs their individual ticket for entry</li>' : ''}
+              ${attachments && ((attachments.length === 1 && attachments[0].filename.includes('All_')) || attachments.length > 1) ? '<li>Each person needs their individual ticket page/QR code for entry</li>' : ''}
+              ${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? '<li>Print the entire PDF or show individual ticket pages on your mobile device</li>' : ''}
             </ul>
             
             <p>We look forward to seeing you at the event!</p>
           </div>
           
           <div class="footer">
-            <p>For any queries, contact us at admin@malangdandiya.com</p>
-            <p>© 2025 Malang Raas Dandiya. All rights reserved.</p>
+            <p>For any queries, contact us at support@malangevents.com</p>
+            <p>© 2025 Malang Events. All rights reserved.</p>
+            <p>Visit us: <a href="https://malangevents.com" style="color: #d4af37;">malangevents.com</a></p>
           </div>
         </div>
       </body>
       </html>
     `;
 
-    // Use Resend's default domain for testing (no verification needed)
-    const fromName = process.env.EMAIL_FROM_NAME || 'Malang Dandiya';
-    const fromEmail = 'onboarding@resend.dev'; // Resend's default verified domain
+    // Production email configuration - allow any verified domain
+    const fromName = process.env.EMAIL_FROM_NAME || 'Malang Events';
+    const fromEmail = process.env.EMAIL_FROM_ADDRESS || 'noreply@malangevents.com';
+    
+    // Log the from email for debugging
+    console.log(`📧 Sending from: ${fromName} <${fromEmail}>`);
+    console.log(`📧 Sending to: ${toEmail}`);
 
     const emailData = {
       from: `${fromName} <${fromEmail}>`,
@@ -120,17 +147,24 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
 
     const result = await resend.emails.send(emailData);
     
-    console.log('📧 Resend API Response:', JSON.stringify(result, null, 2));
-    console.log('✅ Email sent successfully via Resend:', result.data?.id || result.id || 'Email ID not available');
+    console.log('📧 Production Email Sent Successfully!');
+    console.log('📧 Message ID:', result.data?.id || result.id || 'ID not available');
+    
     return {
       success: true,
       messageId: result.data?.id || result.id,
-      service: 'resend'
+      service: 'resend_production',
+      timestamp: new Date().toISOString()
     };
 
   } catch (error) {
-    console.error('❌ Resend email failed:', error);
-    throw new Error(`Resend email service failed: ${error.message}`);
+    console.error('❌ Production email failed:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      status: error.status,
+      name: error.name
+    });
+    throw new Error(`Production email service failed: ${error.message}`);
   }
 }
 
