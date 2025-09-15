@@ -5,10 +5,6 @@ import path from 'path';
 
 dotenv.config();
 
-/**
- * AiSensy WhatsApp Service
- * Production-ready WhatsApp API integration
- */
 class WhatsAppService {
   constructor() {
     this.apiKey = process.env.AISENSY_API_KEY;
@@ -24,25 +20,8 @@ class WhatsAppService {
     }
   }
 
-  /**
-   * Upload PDF buffer to temporary hosting for WhatsApp sharing
-   */
   async uploadPDFForWhatsApp(pdfBuffer, bookingId) {
     try {
-      // Check if we have a publicly accessible server URL
-      const serverUrl = process.env.SERVER_URL || process.env.PUBLIC_URL || '';
-      const isPublicUrl = serverUrl && 
-                         !serverUrl.includes('localhost') && 
-                         !serverUrl.includes('127.0.0.1') && 
-                         !serverUrl.includes('192.168.');
-
-      if (!isPublicUrl) {
-        console.warn('⚠️ No public server URL configured for WhatsApp PDF attachments');
-        console.warn('⚠️ Set SERVER_URL environment variable to enable PDF attachments in WhatsApp');
-        return null; // Disable PDF attachments when not publicly accessible
-      }
-
-      // Create tickets directory path (same as static serving)
       const ticketsDir = path.join(process.cwd(), 'tickets');
       if (!fs.existsSync(ticketsDir)) {
         fs.mkdirSync(ticketsDir, { recursive: true });
@@ -51,23 +30,27 @@ class WhatsAppService {
       const fileName = `ticket-${bookingId}-${Date.now()}.pdf`;
       const filePath = path.join(ticketsDir, fileName);
       
-      // Write PDF buffer to tickets directory
       fs.writeFileSync(filePath, pdfBuffer);
       
-      // Return public URL that matches the static serving route
-      const publicUrl = `${serverUrl}/tickets/${fileName}`;
+      const serverUrl = process.env.SERVER_URL || process.env.PUBLIC_URL;
       
-      console.log('📄 PDF uploaded for WhatsApp:', publicUrl);
-      return publicUrl;
+      if (serverUrl && serverUrl.startsWith('http')) {
+        const publicUrl = `${serverUrl}/tickets/${fileName}`;
+        console.log('📄 PDF uploaded for WhatsApp:', publicUrl);
+        return publicUrl;
+      } else {
+        console.log('📄 PDF saved locally:', fileName);
+        console.warn('⚠️ Using placeholder URL - set SERVER_URL for production');
+        console.warn('⚠️ For ngrok: SERVER_URL=https://your-ngrok-url.ngrok.io');
+        return null;
+      }
+      
     } catch (error) {
       console.error('❌ Failed to upload PDF for WhatsApp:', error);
       return null;
     }
   }
 
-  /**
-   * Send booking confirmation via WhatsApp
-   */
   async sendBookingConfirmation(data) {
     if (!this.isConfigured) {
       console.warn('❌ WhatsApp service not configured');
@@ -77,13 +60,11 @@ class WhatsAppService {
     try {
       const { phone, name, eventName, ticketCount, amount, bookingId, pdfBuffer, pdfUrl } = data;
       
-      // Format phone number - ensure it has country code
       let formattedPhone = phone;
       if (!formattedPhone.startsWith('+')) {
         formattedPhone = formattedPhone.startsWith('91') ? `+${formattedPhone}` : `+91${formattedPhone}`;
       }
       
-      // Remove any spaces or special characters except +
       formattedPhone = formattedPhone.replace(/[^\d+]/g, '');
       
       const payload = {
@@ -92,36 +73,34 @@ class WhatsAppService {
         destination: formattedPhone,
         userName: name || 'Guest',
         templateParams: [
-          String(name || 'Guest'),           // [1] - Customer name
-          String(eventName || 'Dandiya Night'), // [2] - Event name  
-          String(ticketCount || '1'),        // [3] - Number of tickets
-          String(amount || '₹399'),          // [4] - Total amount
-          String(bookingId || 'N/A'),        // [5] - Booking ID
-          'Regal Lawns, Beed Bypass'        // [6] - Venue location
+          String(name || 'Guest'),
+          String(eventName || 'Dandiya Night'),
+          String(ticketCount || '1'),
+          String(amount || '₹399'),
+          String(bookingId || 'N/A'),
+          'Regal Lawns, Beed Bypass'
         ]
       };
 
-      // Add media attachment if available (PDF ticket or default image)
       if (pdfBuffer) {
-        // Upload PDF buffer and get public URL
-        const pdfUrl = await this.uploadPDFForWhatsApp(pdfBuffer, bookingId);
-        if (pdfUrl) {
+        const uploadedPdfUrl = await this.uploadPDFForWhatsApp(pdfBuffer, bookingId);
+        if (uploadedPdfUrl) {
           payload.media = {
-            url: pdfUrl,
+            url: uploadedPdfUrl,
             filename: `ticket-${bookingId}.pdf`,
             type: 'document'
           };
-          console.log('📄 Attaching PDF ticket to WhatsApp:', pdfUrl);
+          console.log('📄 Attaching PDF ticket to WhatsApp:', uploadedPdfUrl);
         } else {
-          // Fallback to default image if PDF upload fails
-          console.log('📷 Falling back to event poster (PDF attachment disabled)');
+          const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=TICKET-${bookingId}`;
           payload.media = {
-            url: process.env.WHATSAPP_MEDIA_URL || 'https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG',
-            filename: 'event-poster.png'
+            url: qrCodeUrl,
+            filename: `qr-${bookingId}.png`,
+            type: 'image'
           };
+          console.log('📱 Attaching QR code to WhatsApp (PDF unavailable)');
         }
       } else if (pdfUrl) {
-        // If PDF URL is provided directly, attach as document
         payload.media = {
           url: pdfUrl,
           filename: `ticket-${bookingId}.pdf`,
@@ -129,11 +108,13 @@ class WhatsAppService {
         };
         console.log('📄 Attaching PDF ticket to WhatsApp:', pdfUrl);
       } else {
-        // Default event poster
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=TICKET-${bookingId || 'DEFAULT'}`;
         payload.media = {
-          url: process.env.WHATSAPP_MEDIA_URL || 'https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG',
-          filename: 'event-poster.png'
+          url: qrCodeUrl,
+          filename: `qr-${bookingId || 'default'}.png`,
+          type: 'image'
         };
+        console.log('📱 Attaching QR code to WhatsApp (no PDF provided)');
       }
 
       console.log('📱 Sending WhatsApp via AiSensy to:', formattedPhone);
@@ -167,9 +148,6 @@ class WhatsAppService {
     }
   }
 
-  /**
-   * Legacy method for backward compatibility
-   */
   async sendTicketMessage(phoneNumber, message, attachments) {
     console.log('📱 Legacy WhatsApp method called, redirecting to sendBookingConfirmation');
     
