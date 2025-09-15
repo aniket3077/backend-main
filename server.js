@@ -244,13 +244,34 @@ bookingRoutes.post("/test-whatsapp", async (req, res) => {
     
     const whatsappService = (await import("./services/whatsappService.js")).default;
     
+    // Generate test PDF if requested
+    let pdfBuffer = null;
+    if (req.body.includePDF !== false) { // Default to including PDF
+      try {
+        const { generateTicketPDFBuffer } = await import("./utils/pdfGenerator.js");
+        const testData = {
+          name: name || "Test User",
+          date: new Date().toISOString(),
+          pass_type: "couple",
+          qrCode: "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=TEST123",
+          booking_id: bookingId || "TEST123",
+          ticket_number: "TEST-TICKET-001"
+        };
+        pdfBuffer = await generateTicketPDFBuffer(testData);
+        console.log(`📄 Generated test PDF: ${pdfBuffer ? pdfBuffer.length : 0} bytes`);
+      } catch (pdfError) {
+        console.error('❌ Test PDF generation failed:', pdfError);
+      }
+    }
+    
     const result = await whatsappService.sendBookingConfirmation({
       phone: phone,
       name: name || "Test User",
       eventName: eventName || "Dandiya Night Test",
       ticketCount: ticketCount || 2,
       amount: amount || "₹500",
-      bookingId: bookingId || "TEST123"
+      bookingId: bookingId || "TEST123",
+      pdfBuffer: pdfBuffer
     });
     
     res.json({

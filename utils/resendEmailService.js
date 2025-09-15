@@ -94,7 +94,7 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
           </div>
           
           <div class="footer">
-            <p>For any queries, contact us at admin@malangdandiya.com</p>
+            <p>For any queries, contact us at admin@malangevents.com</p>
             <p>© 2025 Malang Raas Dandiya. All rights reserved.</p>
           </div>
         </div>

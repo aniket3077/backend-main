@@ -647,19 +647,33 @@ async function sendTicketNotifications(booking_id, payment_id) {
     if (primaryUser.phone) {
       try {
         const phoneNumber = primaryUser.phone.replace(/^\+?91|\s+/g, '');
-        const message = `🎉 Your Dandiya Night booking #${booking.id} is confirmed!\n\n` +
-          `📅 Date: ${new Date(booking.booking_date).toLocaleDateString()}\n` +
-          `🎟️ Tickets: ${booking.num_tickets} ${booking.pass_type} pass\n` +
-          `💰 Amount: ₹${payment?.amount || booking.final_amount || 0}\n\n` +
-          `Show this QR code at the entrance.`;
+        
+        // Generate PDF for WhatsApp attachment
+        let pdfBuffer = null;
+        try {
+          const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
+          const ticketData = {
+            name: primaryUser.name,
+            date: booking.booking_date,
+            pass_type: booking.pass_type,
+            qrCode: booking.qr_code,
+            booking_id: booking.id,
+            ticket_number: `TICKET-${booking.id}-001`
+          };
+          pdfBuffer = await generateTicketPDFBuffer(ticketData);
+          console.log('📄 Generated PDF for WhatsApp:', pdfBuffer ? `${pdfBuffer.length} bytes` : 'failed');
+        } catch (pdfError) {
+          console.error('❌ PDF generation failed for WhatsApp:', pdfError);
+        }
 
         await whatsappService.sendBookingConfirmation({
-          phoneNumber: phoneNumber,
-          customerName: primaryUser.name,
+          phone: phoneNumber,
+          name: primaryUser.name,
           eventName: 'Dandiya Night',
           ticketCount: booking.num_tickets,
+          amount: `₹${payment?.amount || booking.final_amount || 0}`,
           bookingId: booking.id.toString(),
-          pdfPath: null // Will be handled by WhatsApp service
+          pdfBuffer: pdfBuffer
         });
         console.log('💬 WhatsApp notification sent to:', phoneNumber);
       } catch (whatsappError) {

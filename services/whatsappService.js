@@ -1,5 +1,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
@@ -23,6 +25,47 @@ class WhatsAppService {
   }
 
   /**
+   * Upload PDF buffer to temporary hosting for WhatsApp sharing
+   */
+  async uploadPDFForWhatsApp(pdfBuffer, bookingId) {
+    try {
+      // Check if we have a publicly accessible server URL
+      const serverUrl = process.env.SERVER_URL || process.env.PUBLIC_URL || '';
+      const isPublicUrl = serverUrl && 
+                         !serverUrl.includes('localhost') && 
+                         !serverUrl.includes('127.0.0.1') && 
+                         !serverUrl.includes('192.168.');
+
+      if (!isPublicUrl) {
+        console.warn('⚠️ No public server URL configured for WhatsApp PDF attachments');
+        console.warn('⚠️ Set SERVER_URL environment variable to enable PDF attachments in WhatsApp');
+        return null; // Disable PDF attachments when not publicly accessible
+      }
+
+      // Create tickets directory path (same as static serving)
+      const ticketsDir = path.join(process.cwd(), 'tickets');
+      if (!fs.existsSync(ticketsDir)) {
+        fs.mkdirSync(ticketsDir, { recursive: true });
+      }
+      
+      const fileName = `ticket-${bookingId}-${Date.now()}.pdf`;
+      const filePath = path.join(ticketsDir, fileName);
+      
+      // Write PDF buffer to tickets directory
+      fs.writeFileSync(filePath, pdfBuffer);
+      
+      // Return public URL that matches the static serving route
+      const publicUrl = `${serverUrl}/tickets/${fileName}`;
+      
+      console.log('📄 PDF uploaded for WhatsApp:', publicUrl);
+      return publicUrl;
+    } catch (error) {
+      console.error('❌ Failed to upload PDF for WhatsApp:', error);
+      return null;
+    }
+  }
+
+  /**
    * Send booking confirmation via WhatsApp
    */
   async sendBookingConfirmation(data) {
@@ -32,7 +75,7 @@ class WhatsAppService {
     }
 
     try {
-      const { phone, name, eventName, ticketCount, amount, bookingId } = data;
+      const { phone, name, eventName, ticketCount, amount, bookingId, pdfBuffer, pdfUrl } = data;
       
       // Format phone number - ensure it has country code
       let formattedPhone = phone;
@@ -55,12 +98,43 @@ class WhatsAppService {
           String(amount || '₹399'),          // [4] - Total amount
           String(bookingId || 'N/A'),        // [5] - Booking ID
           'Regal Lawns, Beed Bypass'        // [6] - Venue location
-        ],
-        media: {
+        ]
+      };
+
+      // Add media attachment if available (PDF ticket or default image)
+      if (pdfBuffer) {
+        // Upload PDF buffer and get public URL
+        const pdfUrl = await this.uploadPDFForWhatsApp(pdfBuffer, bookingId);
+        if (pdfUrl) {
+          payload.media = {
+            url: pdfUrl,
+            filename: `ticket-${bookingId}.pdf`,
+            type: 'document'
+          };
+          console.log('📄 Attaching PDF ticket to WhatsApp:', pdfUrl);
+        } else {
+          // Fallback to default image if PDF upload fails
+          console.log('📷 Falling back to event poster (PDF attachment disabled)');
+          payload.media = {
+            url: process.env.WHATSAPP_MEDIA_URL || 'https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG',
+            filename: 'event-poster.png'
+          };
+        }
+      } else if (pdfUrl) {
+        // If PDF URL is provided directly, attach as document
+        payload.media = {
+          url: pdfUrl,
+          filename: `ticket-${bookingId}.pdf`,
+          type: 'document'
+        };
+        console.log('📄 Attaching PDF ticket to WhatsApp:', pdfUrl);
+      } else {
+        // Default event poster
+        payload.media = {
           url: process.env.WHATSAPP_MEDIA_URL || 'https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG',
           filename: 'event-poster.png'
-        }
-      };
+        };
+      }
 
       console.log('📱 Sending WhatsApp via AiSensy to:', formattedPhone);
       
