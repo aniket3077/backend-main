@@ -54,18 +54,22 @@ function calculateTicketPrice(passType, ticketType, numTickets) {
     return {
       basePrice: pricing.base,
       finalPrice: pricing.bulk_price,
+      pricePerTicket: pricing.bulk_price, // Per ticket price after discount
       discountApplied: true,
       totalAmount: pricing.bulk_price * quantity,
-      savings: (pricing.base - pricing.bulk_price) * quantity
+      savings: (pricing.base - pricing.bulk_price) * quantity,
+      discountAmount: (pricing.base - pricing.bulk_price) * quantity
     };
   }
 
   return {
     basePrice: pricing.base,
     finalPrice: pricing.base,
+    pricePerTicket: pricing.base, // Per ticket price
     discountApplied: false,
     totalAmount: pricing.base * quantity,
-    savings: 0
+    savings: 0,
+    discountAmount: 0
   };
 }
 
@@ -178,18 +182,20 @@ export const createBooking = async (req, res) => {
     
     // Extract values from priceInfo
     const totalAmount = priceInfo.totalAmount;
-    const totalDiscount = priceInfo.savings || 0;
+    const totalDiscount = priceInfo.discountAmount || 0;
     const discountApplied = priceInfo.discountApplied;
+    const pricePerTicket = priceInfo.pricePerTicket;
     
     // Define pass details for JSON storage
     const passDetails = {
       pass_type,
       ticket_type,
       num_tickets: finalTicketCount,
+      price_per_ticket: pricePerTicket, // Individual ticket price
+      base_price: priceInfo.basePrice,
+      final_price: priceInfo.finalPrice,
       total_amount: totalAmount,
       discount_amount: totalDiscount,
-      final_price: priceInfo.finalPrice,
-      base_price: priceInfo.basePrice,
       discount_applied: discountApplied,
       booking_date: parsedDate.toISOString()
     };
@@ -1175,6 +1181,55 @@ export const resendNotifications = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to resend notifications'
+    });
+  }
+};
+
+// 8️⃣ Get Pricing Information (NEW)
+export const getPricingInfo = async (req, res) => {
+  const { pass_type, ticket_type = 'single', num_tickets = 1 } = req.query;
+
+  try {
+    if (!pass_type) {
+      return res.status(400).json({
+        success: false,
+        error: 'pass_type is required'
+      });
+    }
+
+    const priceInfo = calculateTicketPrice(pass_type, ticket_type, parseInt(num_tickets));
+    
+    // Format response for frontend
+    const response = {
+      success: true,
+      pricing: {
+        pass_type,
+        ticket_type,
+        num_tickets: parseInt(num_tickets),
+        currency: 'INR',
+        base_price: priceInfo.basePrice,
+        price_per_ticket: priceInfo.pricePerTicket,
+        total_amount: priceInfo.totalAmount,
+        discount_applied: priceInfo.discountApplied,
+        discount_amount: priceInfo.discountAmount || 0,
+        savings: priceInfo.savings || 0,
+        // Formatted strings for display (without currency symbols - let frontend handle)
+        formatted: {
+          base_price: priceInfo.basePrice.toString(),
+          price_per_ticket: priceInfo.pricePerTicket.toString(),
+          total_amount: priceInfo.totalAmount.toString(),
+          discount_amount: (priceInfo.discountAmount || 0).toString()
+        }
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error in getPricingInfo:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to calculate pricing',
+      details: error.message
     });
   }
 };

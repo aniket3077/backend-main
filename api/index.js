@@ -149,6 +149,16 @@ app.post('/api/bookings/test-whatsapp', async (req, res) => {
   }
 });
 
+// Get pricing information endpoint
+app.get('/api/bookings/pricing', async (req, res) => {
+  try {
+    await bookingController.getPricingInfo(req, res);
+  } catch (error) {
+    console.error('Get pricing error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // WhatsApp configuration check endpoint
 app.get('/api/config/whatsapp', (req, res) => {
   const config = {
@@ -289,6 +299,7 @@ app.use((req, res) => {
       createPayment: 'POST /api/bookings/create-payment',
       confirmPayment: 'POST /api/bookings/confirm-payment',
       testWhatsApp: 'POST /api/bookings/test-whatsapp',
+      getPricing: 'GET /api/bookings/pricing',
       whatsappConfig: 'GET /api/config/whatsapp',
       testDb: 'GET /api/test-db'
     }
