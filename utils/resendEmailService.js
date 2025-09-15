@@ -102,21 +102,21 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
       </html>
     `;
 
-    // Email configuration - Use custom domain if verified, fallback to Resend default
+    // Email configuration - Use verified custom domain
     const fromName = process.env.EMAIL_FROM_NAME || 'Malang Dandiya';
-    const emailDomain = process.env.EMAIL_DOMAIN || 'resend.dev';
+    const emailDomain = process.env.EMAIL_DOMAIN || 'malangevents.com';
     const fromAddress = process.env.EMAIL_FROM_ADDRESS;
     
     let fromEmail;
     
-    // If custom domain and address are configured, try to use them
-    if (emailDomain !== 'resend.dev' && fromAddress && fromAddress.includes('@')) {
+    // Use the verified custom domain (malangevents.com)
+    if (fromAddress && fromAddress.includes('@malangevents.com')) {
       fromEmail = fromAddress;
-      console.log(`📧 Using custom domain email: ${fromEmail}`);
+      console.log(`📧 Using verified custom domain: ${fromEmail}`);
     } else {
-      // Use Resend's default verified domain for reliability
-      fromEmail = 'onboarding@resend.dev';
-      console.log(`📧 Using Resend default domain: ${fromEmail}`);
+      // Default to noreply@malangevents.com for verified domain
+      fromEmail = `noreply@malangevents.com`;
+      console.log(`📧 Using verified domain default: ${fromEmail}`);
     }
 
     const emailData = {
