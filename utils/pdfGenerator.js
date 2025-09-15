@@ -31,7 +31,7 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
 
       const passTypeColors = getPassTypeColor(safePassType);
 
-      const doc = new PDFDocument({ size: [420, 650], margin: 20 });
+      const doc = new PDFDocument({ size: [420, 650], margin: 15 });
       const chunks = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('error', (e) => reject(e));
@@ -59,7 +59,7 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
 // New function to generate multi-page PDF with different colored tickets
 export const generateMultiPageTicketPDF = async (ticketsData) => {
   return new Promise(async (resolve, reject) => {
-    const doc = new PDFDocument({ size: [420, 650], margin: 20 });
+    const doc = new PDFDocument({ size: [420, 650], margin: 15 });
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('error', (e) => reject(e));
@@ -123,31 +123,31 @@ async function generateSingleTicketPage(doc, ticketData) {
     doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
     
     // Decorative border with pass type color
-    doc.roundedRect(15, 15, 390, 620, 15)
-       .lineWidth(4)
+    doc.roundedRect(10, 10, 400, 630, 12)
+       .lineWidth(3)
        .strokeColor(passTypeColors.primary)
        .stroke();
     
     // Inner decorative border
-    doc.roundedRect(25, 25, 370, 600, 12)
-       .lineWidth(2)
+    doc.roundedRect(18, 18, 384, 614, 10)
+       .lineWidth(1)
        .strokeColor(passTypeColors.secondary)
        .stroke();
 
-    // Header background with pass type gradient effect
-    doc.rect(35, 35, 350, 100)
+    // Header background with pass type gradient effect - Made smaller
+    doc.rect(25, 25, 370, 85)
        .fillColor(passTypeColors.primary)
        .fill();
     
     // Header decorative overlay
-    doc.rect(35, 35, 350, 100)
+    doc.rect(25, 25, 370, 85)
        .fillColor(passTypeColors.secondary)
        .fillOpacity(0.3)
        .fill()
        .fillOpacity(1);
 
         // Download and add logo
-        let yPos = 45;
+        let yPos = 35;
         try {
           const logoResponse = await axios.get('https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG', {
             responseType: 'arraybuffer',
@@ -158,152 +158,152 @@ async function generateSingleTicketPage(doc, ticketData) {
           });
           const logoBuffer = Buffer.from(logoResponse.data, 'binary');
           
-          // Logo positioning
-          doc.image(logoBuffer, 50, yPos, { width: 80, height: 80 });
+          // Logo positioning - Made smaller
+          doc.image(logoBuffer, 35, yPos, { width: 65, height: 65 });
           
-          // Event title with logo
-          doc.fontSize(22)
+          // Event title with logo - Reduced font sizes
+          doc.fontSize(18)
              .fillColor('#ffffff')
              .font('Helvetica-Bold')
-             .text('MALANG RAS DANDIYA 2025', 140, yPos + 10, {
-               width: 230,
+             .text('MALANG RAS DANDIYA 2025', 110, yPos + 8, {
+               width: 270,
                align: 'center'
              });
           
-          doc.fontSize(14)
+          doc.fontSize(12)
              .fillColor('#ffd700')
              .font('Helvetica')
-             .text('', 140, yPos + 40, {
-               width: 230,
+             .text('', 110, yPos + 32, {
+               width: 270,
                align: 'center'
              });
              
-          doc.fontSize(12)
+          doc.fontSize(10)
              .fillColor('#ffffff')
-             .text('Official Entry Pass', 140, yPos + 60, {
-               width: 230,
+             .text('Official Entry Pass', 110, yPos + 50, {
+               width: 270,
                align: 'center'
              });
              
         } catch (logoErr) {
           console.warn('Logo download failed, using text header:', logoErr.message);
           
-          // Fallback header without logo
-          doc.fontSize(24)
+          // Fallback header without logo - Reduced font sizes
+          doc.fontSize(20)
              .fillColor('#ffffff')
              .font('Helvetica-Bold')
-             .text(' MALANG RAS DANDIYA 2025 ', 45, yPos + 20, {
+             .text(' MALANG RAS DANDIYA 2025 ', 35, yPos + 15, {
                align: 'center',
-               width: 330
+               width: 350
              });
           
-          doc.fontSize(14)
+          doc.fontSize(12)
              .fillColor('#ffd700')
-             .text(' Official Entry Pass ', 45, yPos + 55, {
+             .text(' Official Entry Pass ', 35, yPos + 45, {
                align: 'center',
-               width: 330
+               width: 350
              });
         }
 
-        // Main content background
-        yPos = 160;
-        doc.rect(35, yPos, 350, 280)
+        // Main content background - Made more compact
+        yPos = 125;
+        doc.rect(25, yPos, 370, 240)
            .fillColor('#ffffff')
            .fill();
 
-        // Guest Name Section
-        yPos += 25;
-        doc.rect(45, yPos, 330, 50)
+        // Guest Name Section - Reduced height
+        yPos += 15;
+        doc.rect(35, yPos, 350, 40)
            .fillColor('#fff8f0')
            .fill();
         
-        doc.fontSize(12)
+        doc.fontSize(11)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text(' GUEST NAME', 55, yPos + 10);
+           .text(' GUEST NAME', 45, yPos + 5);
         
         doc.font('Helvetica-Bold')
-           .fontSize(18)
+           .fontSize(16)
            .fillColor('#1a1a2e')
-           .text(safeName.toUpperCase(), 55, yPos + 25);
+           .text(safeName.toUpperCase(), 45, yPos + 20);
 
-        // Event Details Section
-        yPos += 70;
-        doc.fontSize(12)
+        // Event Details Section - Reduced spacing
+        yPos += 55;
+        doc.fontSize(11)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('EVENT DATE', 55, yPos);
+           .text('EVENT DATE', 45, yPos);
         
         doc.font('Helvetica')
-           .fontSize(16)
+           .fontSize(14)
            .fillColor('#1a1a2e')
            .text(new Date(safeDate).toLocaleDateString('en-IN', {
              weekday: 'long',
              year: 'numeric',
              month: 'long',
              day: 'numeric'
-           }), 55, yPos + 18);
+           }), 45, yPos + 15);
 
-        // Pass Type Section with Color Indicator
-        yPos += 50;
-        doc.fontSize(12)
+        // Pass Type Section with Color Indicator - Reduced spacing
+        yPos += 40;
+        doc.fontSize(11)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('PASS TYPE', 55, yPos);
+           .text('PASS TYPE', 45, yPos);
         
         // Pass type name with color
         doc.font('Helvetica-Bold')
-           .fontSize(16)
+           .fontSize(14)
            .fillColor(passTypeColors.primary)
-           .text(safePassType.toUpperCase(), 55, yPos + 18);
+           .text(safePassType.toUpperCase(), 45, yPos + 15);
         
-        // Color indicator badge
-        doc.rect(250, yPos + 10, 100, 25)
+        // Color indicator badge - Made smaller
+        doc.rect(250, yPos + 8, 90, 20)
            .fillColor(passTypeColors.primary)
            .fill();
         
         // Color name on badge
         const textColor = passTypeColors.name === 'WHITE' ? '#000000' : '#FFFFFF';
-        doc.fontSize(12)
+        doc.fontSize(10)
            .fillColor(textColor)
            .font('Helvetica-Bold')
-           .text(passTypeColors.name, 250, yPos + 17, {
-             width: 100,
+           .text(passTypeColors.name, 250, yPos + 13, {
+             width: 90,
              align: 'center'
            });
 
-        // Venue Section
-        yPos += 50;
-        doc.fontSize(12)
+        // Venue Section - Reduced spacing
+        yPos += 40;
+        doc.fontSize(11)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('VENUE', 55, yPos);
+           .text('VENUE', 45, yPos);
         
         doc.font('Helvetica')
-           .fontSize(14)
+           .fontSize(12)
            .fillColor('#1a1a2e')
-           .text(safeVenue, 55, yPos + 18);
+           .text(safeVenue, 45, yPos + 15);
 
-        // Booking Details
-        yPos += 45;
-        doc.fontSize(10)
+        // Booking Details - Reduced spacing
+        yPos += 35;
+        doc.fontSize(9)
            .fillColor('#666666')
            .font('Helvetica')
-           .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 55, yPos);
+           .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 45, yPos);
 
-        // QR Code Section
-        yPos += 30;
-        doc.rect(35, yPos, 350, 140)
+        // QR Code Section - Made more compact
+        yPos += 20;
+        doc.rect(25, yPos, 370, 120)
            .fillColor('#f8f9fa')
            .fill();
         
-        doc.fontSize(14)
+        doc.fontSize(12)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text(' SCAN FOR ENTRY', 45, yPos + 15, { align: 'center', width: 330 });
+           .text(' SCAN FOR ENTRY', 35, yPos + 10, { align: 'center', width: 350 });
 
-        // Handle QR code with enhanced error handling
-        const qrYPos = yPos + 40;
+        // Handle QR code with enhanced error handling - Made more compact
+        const qrYPos = yPos + 30;
         try {
           let qrBuffer;
           
@@ -351,54 +351,61 @@ async function generateSingleTicketPage(doc, ticketData) {
             qrBuffer = await generateQRCodeBuffer(ticketNum);
           }
           
-          // Add QR code with decorative border
-          doc.rect(160, qrYPos, 100, 100)
-            .lineWidth(3)
+          // Add QR code with decorative border - Made smaller
+          doc.rect(170, qrYPos, 80, 80)
+            .lineWidth(2)
             .strokeColor('black')
             .stroke();
-          doc.image(qrBuffer, 165, qrYPos + 5, { fit: [90, 90] });
+          doc.image(qrBuffer, 173, qrYPos + 3, { fit: [74, 74] });
           
         } catch (qrError) {
           console.warn('QR code generation failed, using text fallback:', qrError.message);
           
-          // Fallback QR display
-          doc.rect(160, qrYPos, 100, 100)
+          // Fallback QR display - Made smaller
+          doc.rect(170, qrYPos, 80, 80)
             .lineWidth(2)
             .strokeColor('#cccccc')
             .stroke();
           
-          doc.fontSize(10)
+          doc.fontSize(9)
              .fillColor('#666666')
-             .text('QR Code\nUnavailable', 165, qrYPos + 35, { 
+             .text('QR Code\nUnavailable', 173, qrYPos + 25, { 
                align: 'center', 
-               width: 90 
+               width: 74 
              });
           
           doc.fontSize(8)
              .fillColor('#999999')
-             .text(`ID: ${booking_id || 'N/A'}`, 165, qrYPos + 65, { 
+             .text(`ID: ${booking_id || 'N/A'}`, 173, qrYPos + 50, { 
                align: 'center', 
-               width: 90 
+               width: 74 
              });
         }
 
-        // Footer section
-        yPos += 160;
-        doc.rect(35, yPos, 350, 80)
+        // Footer section - Made more compact
+        yPos += 135;
+        doc.rect(25, yPos, 370, 60)
            .fillColor('#1a1a2e')
            .fill();
 
-        doc.fontSize(12)
+        doc.fontSize(11)
            .fillColor('#ffd700')
            .font('Helvetica-Bold')
-           .text(' EVENT DETAILS', 45, yPos + 10, { align: 'center', width: 330 });
+           .text(' EVENT DETAILS', 35, yPos + 8, { align: 'center', width: 350 });
 
-        doc.fontSize(10)
+        doc.fontSize(9)
            .fillColor('#ffffff')
            .font('Helvetica')
-           .text('Time: 7:00 PM onwards | 🎵 Live DJ & Traditional Music', 45, yPos + 30, { 
+           .text('Time: 7:00 PM onwards | 🎵 Live DJ & Traditional Music', 35, yPos + 25, { 
              align: 'center', 
-             width: 330 
+             width: 350 
+           });
+
+        doc.fontSize(8)
+           .fillColor('#cccccc')
+           .text('🎟️ Entry is subject to terms & conditions | No outside food/drinks allowed', 35, yPos + 42, { 
+             align: 'center', 
+             width: 350 
            });
 
         
