@@ -402,17 +402,11 @@ async function generateSingleTicketPage(doc, ticketData) {
            });
 
         
-
-        
-
-        doc.end();
-        
       } catch (error) {
         console.error('PDF generation error:', error);
-        reject(error);
+        throw error;
       }
-   });
-};
+}
 
 // Enhanced file-based version
 export const generateDandiyaTicketPDF = async (ticketData) => {
