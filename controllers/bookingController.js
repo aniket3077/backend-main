@@ -118,12 +118,24 @@ function computeTotalAmount(passType, quantity = 1) {
 export const createBooking = async (req, res) => {
   const { booking_date, num_tickets, pass_type, ticket_type = 'single' } = req.body;
   
+  // Auto-set ticket quantities based on pass type
+  let finalTicketCount = num_tickets;
+  if (pass_type === 'couple') {
+    finalTicketCount = 2;
+    console.log('🎫 Auto-setting couple tickets to 2');
+  } else if (pass_type === 'family' || pass_type === 'family4') {
+    finalTicketCount = 4;
+    console.log('🎫 Auto-setting family tickets to 4');
+  } else {
+    finalTicketCount = num_tickets || 1;
+  }
+  
   // Validate required fields
-  if (!booking_date || !num_tickets || !pass_type) {
+  if (!booking_date || !pass_type) {
     return res.status(400).json({
       success: false,
       error: "Missing required fields",
-      message: "booking_date, num_tickets, and pass_type are required"
+      message: "booking_date and pass_type are required"
     });
   }
 
@@ -138,12 +150,12 @@ export const createBooking = async (req, res) => {
   }
   
   try {
-    // Calculate pricing with bulk discount
-    const priceInfo = calculateTicketPrice(pass_type, ticket_type, num_tickets);
+    // Calculate pricing with bulk discount using auto-adjusted ticket count
+    const priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
     
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
-      num_tickets: parseInt(num_tickets),
+      num_tickets: parseInt(finalTicketCount),
       pass_type,
       ticket_type,
       pricing: priceInfo,
@@ -189,7 +201,7 @@ export const createBooking = async (req, res) => {
       RETURNING *
     `, [
       parsedDate, 
-      parseInt(num_tickets), 
+      parseInt(finalTicketCount), 
       pass_type, 
       ticket_type,
       'pending', 
@@ -219,12 +231,12 @@ export const createBooking = async (req, res) => {
       // Database is offline, create mock booking
       console.log('⚠️ Database offline - creating mock booking');
       const mockBookingId = Date.now().toString();
-      const totalAmount = computeTotalAmount(pass_type, num_tickets) || 0;
+      const totalAmount = computeTotalAmount(pass_type, finalTicketCount) || 0;
       
       const mockBooking = {
         id: mockBookingId,
         booking_date: parsedDate.toISOString(),
-        num_tickets: parseInt(num_tickets),
+        num_tickets: parseInt(finalTicketCount),
         pass_type,
         status: 'pending',
         total_amount: totalAmount,
