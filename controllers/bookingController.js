@@ -116,14 +116,33 @@ function computeTotalAmount(passType, quantity = 1) {
 
 // 1️⃣ Create Booking
 export const createBooking = async (req, res) => {
-  const { booking_date, num_tickets, pass_type, ticket_type = 'single' } = req.body;
+  const { booking_date, num_tickets, pass_type, passes, original_passes, ticket_type = 'single' } = req.body;
+  
+  // Support both old format (num_tickets, pass_type) and new format (passes)
+  let bookingPasses = {};
+  let totalTickets = 0;
+  
+  if (passes && typeof passes === 'object') {
+    // New format: multiple pass types
+    bookingPasses = passes;
+    totalTickets = Object.values(passes).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    
+    // Log the couple ticket conversion for tracking
+    if (original_passes && original_passes.couple) {
+      console.log(`🎯 Couple ticket conversion: ${original_passes.couple} couple tickets converted to ${original_passes.couple} male + ${original_passes.couple} female tickets`);
+    }
+  } else if (num_tickets && pass_type) {
+    // Old format: single pass type (backward compatibility)
+    bookingPasses = { [pass_type]: Number(num_tickets) };
+    totalTickets = Number(num_tickets);
+  }
   
   // Validate required fields
-  if (!booking_date || !num_tickets || !pass_type) {
+  if (!booking_date || totalTickets === 0) {
     return res.status(400).json({
       success: false,
       error: "Missing required fields",
-      message: "booking_date, num_tickets, and pass_type are required"
+      message: "booking_date and at least one pass type with tickets are required"
     });
   }
 
@@ -138,15 +157,42 @@ export const createBooking = async (req, res) => {
   }
   
   try {
-    // Calculate pricing with bulk discount
-    const priceInfo = calculateTicketPrice(pass_type, ticket_type, num_tickets);
+    // Calculate total pricing for all pass types
+    let totalAmount = 0;
+    let totalDiscount = 0;
+    let discountApplied = false;
+    let passDetails = [];
+    
+    for (const [passType, count] of Object.entries(bookingPasses)) {
+      const passCount = Number(count);
+      if (passCount > 0) {
+        try {
+          const priceInfo = calculateTicketPrice(passType, ticket_type, passCount);
+          totalAmount += priceInfo.totalAmount;
+          totalDiscount += priceInfo.savings || 0;
+          if (priceInfo.discountApplied) discountApplied = true;
+          
+          passDetails.push({
+            pass_type: passType,
+            num_tickets: passCount,
+            base_price: priceInfo.basePrice,
+            final_price: priceInfo.finalPrice,
+            discount: priceInfo.savings || 0
+          });
+        } catch (priceError) {
+          console.warn(`Warning: Could not calculate price for ${passType}: ${priceError.message}`);
+          // Continue with other pass types
+        }
+      }
+    }
     
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
-      num_tickets: parseInt(num_tickets),
-      pass_type,
+      passes: bookingPasses,
+      total_tickets: totalTickets,
       ticket_type,
-      pricing: priceInfo,
+      total_amount: totalAmount,
+      discount: totalDiscount,
       status: 'pending'
     });
     
@@ -164,12 +210,17 @@ export const createBooking = async (req, res) => {
         ADD COLUMN IF NOT EXISTS staff_notes TEXT,
         ADD COLUMN IF NOT EXISTS manual_confirmation BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS confirmed_by INTEGER,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS pass_details JSONB
       `);
     } catch (alterError) {
       console.log('Schema update info:', alterError.message);
     }
 
+    // For database compatibility, we'll store the primary pass type and total tickets
+    // But also store the complete pass details in a JSON field
+    const primaryPassType = Object.keys(bookingPasses)[0] || 'female';
+    
     const result = await query(`
       INSERT INTO bookings (
         booking_date, 
@@ -183,23 +234,43 @@ export const createBooking = async (req, res) => {
         is_season_pass,
         bulk_discount_applied,
         original_ticket_price,
-        discounted_price
+        discounted_price,
+        pass_details
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
       parsedDate, 
-      parseInt(num_tickets), 
-      pass_type, 
+      totalTickets, 
+      primaryPassType, 
       ticket_type,
       'pending', 
-      priceInfo.totalAmount, 
-      priceInfo.savings || 0, 
-      priceInfo.totalAmount,
+      totalAmount, 
+      totalDiscount, 
+      totalAmount,
       ticket_type === 'season',
-      priceInfo.discountApplied || false,
-      priceInfo.basePrice,
-      priceInfo.finalPrice
+      discountApplied,
+      totalAmount + totalDiscount,
+      totalAmount,
+      JSON.stringify({ 
+        passes: bookingPasses, 
+        details: passDetails,
+        original_passes: original_passes || bookingPasses,
+        couple_conversion: original_passes && original_passes.couple ? {
+          couple_tickets: original_passes.couple,
+          converted_to: {
+            male: original_passes.couple,
+            female: original_passes.couple
+          }
+        } : null,
+        family_conversion: original_passes && original_passes.family ? {
+          family_tickets: original_passes.family,
+          converted_to: {
+            male: original_passes.family * 2,
+            female: original_passes.family * 2
+          }
+        } : null
+      })
     ]);
     
     // Check if we actually got a result (database available)
@@ -219,17 +290,35 @@ export const createBooking = async (req, res) => {
       // Database is offline, create mock booking
       console.log('⚠️ Database offline - creating mock booking');
       const mockBookingId = Date.now().toString();
-      const totalAmount = computeTotalAmount(pass_type, num_tickets) || 0;
       
       const mockBooking = {
         id: mockBookingId,
         booking_date: parsedDate.toISOString(),
-        num_tickets: parseInt(num_tickets),
-        pass_type,
+        num_tickets: totalTickets,
+        pass_type: primaryPassType,
         status: 'pending',
         total_amount: totalAmount,
-        discount_amount: 0,
+        discount_amount: totalDiscount,
         final_amount: totalAmount,
+        pass_details: JSON.stringify({ 
+          passes: bookingPasses, 
+          details: passDetails,
+          original_passes: original_passes || bookingPasses,
+          couple_conversion: original_passes && original_passes.couple ? {
+            couple_tickets: original_passes.couple,
+            converted_to: {
+              male: original_passes.couple,
+              female: original_passes.couple
+            }
+          } : null,
+          family_conversion: original_passes && original_passes.family ? {
+            family_tickets: original_passes.family,
+            converted_to: {
+              male: original_passes.family * 2,
+              female: original_passes.family * 2
+            }
+          } : null
+        }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         _isMockBooking: true
@@ -556,12 +645,10 @@ export const createPayment = async (req, res) => {
   
   try {
     let computedAmount = null;
-    let bookingPassType = null;
-    let bookingQty = 1;
     
-    // Fetch booking to get authoritative pass_type and num_tickets
+    // Fetch booking to get complete pass details for accurate pricing
     const result = await query(`
-      SELECT pass_type, num_tickets FROM bookings WHERE id = $1
+      SELECT pass_type, num_tickets, total_amount, pass_details FROM bookings WHERE id = $1
     `, [parseInt(booking_id)]);
     
     if (result.rows.length === 0) {
@@ -569,12 +656,24 @@ export const createPayment = async (req, res) => {
     }
     
     const booking = result.rows[0];
-    bookingPassType = booking.pass_type;
-    bookingQty = booking.num_tickets;
-    computedAmount = computeTotalAmount(bookingPassType, bookingQty);
-    if (computedAmount === null) {
-      return res.status(400).json({ success: false, error: `Unsupported pass_type: ${bookingPassType}` });
+    
+    // Use the pre-calculated total_amount from booking creation (which correctly handles multiple pass types)
+    computedAmount = booking.total_amount;
+    
+    // Fallback to old calculation method if total_amount is null/zero
+    if (!computedAmount || computedAmount <= 0) {
+      console.warn('Warning: Using fallback pricing calculation');
+      computedAmount = computeTotalAmount(booking.pass_type, booking.num_tickets);
     }
+    
+    if (!computedAmount || computedAmount <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Unable to calculate amount for booking ${booking_id}` 
+      });
+    }
+    
+    console.log(`💰 Payment amount for booking ${booking_id}: ₹${computedAmount}`);
     
     // Check if Razorpay is initialized
     if (!razorpay) {
@@ -771,7 +870,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
     const qrCode = booking.qr_codes.length > 0 ? booking.qr_codes[0] : null;
     const payment = booking.payments.length > 0 ? booking.payments[0] : null;
 
-    // Generate PDF tickets for all QR codes (single PDF with multiple tickets)
+    // Generate PDF tickets - Single single PDF with multi-page PDF approach
     let pdfAttachments = [];
     try {
       if (booking.qr_codes && booking.qr_codes.length > 0) {
@@ -811,9 +910,36 @@ async function sendTicketNotifications(booking_id, payment_id) {
     // Send email notification if email exists
     if (primaryUser.email) {
       try {
+        // Determine email subject based on ticket type
+        let emailSubject;
+        let originalPassDetails = null;
+        if (booking.pass_details) {
+          try {
+            // Handle both string and object cases
+            originalPassDetails = typeof booking.pass_details === 'string' 
+              ? JSON.parse(booking.pass_details) 
+              : booking.pass_details;
+          } catch (parseError) {
+            console.warn('Failed to parse pass_details for email:', parseError.message);
+            originalPassDetails = null;
+          }
+        }
+        const hasOriginalCoupleTickets = originalPassDetails?.original_passes?.couple > 0;
+        const hasOriginalFamilyTickets = originalPassDetails?.original_passes?.family > 0;
+        
+        if (hasOriginalCoupleTickets) {
+          const coupleCount = originalPassDetails.couple_conversion?.couple_tickets || 1;
+          emailSubject = `Your Dandiya Night Couple Tickets #${booking.id} (${coupleCount} couple ticket${coupleCount > 1 ? 's' : ''} - ${coupleCount * 2} individual passes)`;
+        } else if (hasOriginalFamilyTickets) {
+          const familyCount = originalPassDetails.family_conversion?.family_tickets || 1;
+          emailSubject = `Your Dandiya Night Family Tickets #${booking.id} (${familyCount} family ticket${familyCount > 1 ? 's' : ''} - ${familyCount * 4} individual passes)`;
+        } else {
+          emailSubject = `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`;
+        }
+        
         const emailData = {
           to: primaryUser.email,
-          subject: `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
+          subject: emailSubject,
           booking: booking,
           userName: primaryUser.name,
           qrCodeUrl: qrCode?.qr_code_url
@@ -826,7 +952,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
         
         const emailResult = await sendTicketEmail(
           primaryUser.email,
-          `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
+          emailSubject,
           primaryUser.name,
           emailData.attachments
         );

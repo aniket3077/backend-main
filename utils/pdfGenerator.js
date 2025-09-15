@@ -13,19 +13,19 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
       const safeName = (name ?? "Guest").toString();
       const safePassType = (pass_type ?? "Standard Pass").toString();
       const safeDate = date ?? new Date().toISOString();
-      const safeVenue = venue ?? "Event Ground, Malang";
+      const safeVenue = venue ?? "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
 
-      // Color coding based on pass type
+      // Color coding based on pass type - Enhanced scheme
       const getPassTypeColor = (passType) => {
         const type = passType.toLowerCase();
         switch (type) {
-          case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' }; // Pink
-          case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' }; // Purple
-          case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' }; // White
-          case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' }; // Green
-          case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' }; // Blue
-          case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' }; // Yellow
-          default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' }; // Default orange
+          case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
+          case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
+          case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
+          case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
+          case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
+          case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
+          default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
         }
       };
 
@@ -38,32 +38,113 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
 
       try {
-        // Background - Rich gradient effect
-        doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
-        
-        // Decorative border with pass type color
-        doc.roundedRect(15, 15, 390, 620, 15)
-           .lineWidth(4)
-           .strokeColor(passTypeColors.primary)
-           .stroke();
-        
-        // Inner decorative border
-        doc.roundedRect(25, 25, 370, 600, 12)
-           .lineWidth(2)
-           .strokeColor(passTypeColors.secondary)
-           .stroke();
+        await generateSingleTicketPage(doc, {
+          name: safeName,
+          date: safeDate,
+          pass_type: safePassType,
+          qrCode,
+          booking_id,
+          ticket_number,
+          venue: safeVenue,
+          passTypeColors
+        });
 
-        // Header background with pass type gradient effect
-        doc.rect(35, 35, 350, 100)
-           .fillColor(passTypeColors.primary)
-           .fill();
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+   });
+};
+
+// New function to generate multi-page PDF with different colored tickets
+export const generateMultiPageTicketPDF = async (ticketsData) => {
+  return new Promise(async (resolve, reject) => {
+    const doc = new PDFDocument({ size: [420, 650], margin: 20 });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('error', (e) => reject(e));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+    try {
+      for (let i = 0; i < ticketsData.length; i++) {
+        const ticketData = ticketsData[i];
         
-        // Header decorative overlay
-        doc.rect(35, 35, 350, 100)
-           .fillColor(passTypeColors.secondary)
-           .fillOpacity(0.3)
-           .fill()
-           .fillOpacity(1);
+        // Add new page for each ticket (except the first one)
+        if (i > 0) {
+          doc.addPage();
+        }
+
+        // Color coding based on pass type
+        const getPassTypeColor = (passType) => {
+          const type = (passType || '').toString().toLowerCase();
+          switch (type) {
+            case 'female': return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
+            case 'male': return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
+            case 'couple': return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
+            case 'family': return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
+            case 'group': return { primary: '#1E90FF', secondary: '#87CEEB', name: 'BLUE' };
+            case 'kids': return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
+            default: return { primary: '#ff6b35', secondary: '#ffa500', name: 'ORANGE' };
+          }
+        };
+
+        const passTypeColors = getPassTypeColor(ticketData.pass_type);
+
+        await generateSingleTicketPage(doc, {
+          name: ticketData.name || "Guest",
+          date: ticketData.date || new Date().toISOString(),
+          pass_type: ticketData.pass_type || "Standard Pass",
+          qrCode: ticketData.qrCode,
+          booking_id: ticketData.booking_id,
+          ticket_number: ticketData.ticket_number,
+          venue: ticketData.venue || "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar",
+          passTypeColors
+        });
+      }
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+// Helper function to generate a single ticket page
+async function generateSingleTicketPage(doc, ticketData) {
+  const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, passTypeColors } = ticketData;
+  
+  try {
+    const safeName = name || "Guest";
+    const safeDate = date || new Date().toISOString();
+    const safePassType = pass_type || "Standard Pass";
+    const safeVenue = venue || "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
+
+    // Background - Rich gradient effect
+    doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
+    
+    // Decorative border with pass type color
+    doc.roundedRect(15, 15, 390, 620, 15)
+       .lineWidth(4)
+       .strokeColor(passTypeColors.primary)
+       .stroke();
+    
+    // Inner decorative border
+    doc.roundedRect(25, 25, 370, 600, 12)
+       .lineWidth(2)
+       .strokeColor(passTypeColors.secondary)
+       .stroke();
+
+    // Header background with pass type gradient effect
+    doc.rect(35, 35, 350, 100)
+       .fillColor(passTypeColors.primary)
+       .fill();
+    
+    // Header decorative overlay
+    doc.rect(35, 35, 350, 100)
+       .fillColor(passTypeColors.secondary)
+       .fillOpacity(0.3)
+       .fill()
+       .fillOpacity(1);
 
         // Download and add logo
         let yPos = 45;
