@@ -179,6 +179,7 @@ export const createBooking = async (req, res) => {
     // Extract values from priceInfo
     const totalAmount = priceInfo.totalAmount;
     const totalDiscount = priceInfo.savings || 0;
+    const discountApplied = priceInfo.discountApplied;
     
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
