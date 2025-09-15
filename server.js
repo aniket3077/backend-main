@@ -156,6 +156,9 @@ const bookingRoutes = express.Router();
 // Booking endpoints
 bookingRoutes.post("/create", bookingController.createBooking);
 bookingRoutes.post("/add-users", bookingController.addUserDetails);
+bookingRoutes.get("/details/:booking_id", bookingController.getBookingDetails);
+bookingRoutes.post("/test-email", bookingController.testEmail);
+bookingRoutes.post("/test-whatsapp", bookingController.testWhatsApp);
 bookingRoutes.post("/create-payment", bookingController.createPayment);
 bookingRoutes.post("/confirm-payment", bookingController.confirmPayment);
 bookingRoutes.post("/qr-details", bookingController.getQRDetails);

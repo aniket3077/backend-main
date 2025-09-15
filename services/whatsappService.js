@@ -1,5 +1,6 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+
 import fs from 'fs';
 import path from 'path';
 
@@ -67,10 +68,12 @@ class WhatsAppService {
       
       formattedPhone = formattedPhone.replace(/[^\d+]/g, '');
       
+
       const payload = {
         apiKey: this.apiKey,
         campaignName: this.campaignName,
         destination: formattedPhone,
+
         userName: name || 'Guest',
         templateParams: [
           String(name || 'Guest'),
@@ -132,12 +135,14 @@ class WhatsAppService {
       return {
         success: true,
         messageId: response.data.submitted_message_id || 'sent',
+
         service: 'aisensy',
         destination: formattedPhone,
         response: response.data
       };
 
     } catch (error) {
+
       console.error('❌ WhatsApp sending failed:', error.response?.data || error.message);
       
       return {
@@ -159,6 +164,7 @@ class WhatsAppService {
       amount: '₹399',
       bookingId: 'LEGACY'
     });
+
   }
 }
 

@@ -116,7 +116,26 @@ function computeTotalAmount(passType, quantity = 1) {
 
 // 1️⃣ Create Booking
 export const createBooking = async (req, res) => {
-  const { booking_date, num_tickets, pass_type, ticket_type = 'single' } = req.body;
+  const { booking_date, num_tickets, pass_type, passes, original_passes, ticket_type = 'single' } = req.body;
+  
+  // Support both old format (num_tickets, pass_type) and new format (passes)
+  let bookingPasses = {};
+  let totalTickets = 0;
+  
+  if (passes && typeof passes === 'object') {
+    // New format: multiple pass types
+    bookingPasses = passes;
+    totalTickets = Object.values(passes).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    
+    // Log the couple ticket conversion for tracking
+    if (original_passes && original_passes.couple) {
+      console.log(`🎯 Couple ticket conversion: ${original_passes.couple} couple tickets converted to ${original_passes.couple} male + ${original_passes.couple} female tickets`);
+    }
+  } else if (num_tickets && pass_type) {
+    // Old format: single pass type (backward compatibility)
+    bookingPasses = { [pass_type]: Number(num_tickets) };
+    totalTickets = Number(num_tickets);
+  }
   
   // Auto-set ticket quantities based on pass type
   let finalTicketCount = num_tickets;
@@ -131,11 +150,14 @@ export const createBooking = async (req, res) => {
   }
   
   // Validate required fields
+
   if (!booking_date || !pass_type) {
     return res.status(400).json({
       success: false,
       error: "Missing required fields",
       message: "booking_date and pass_type are required"
+
+  
     });
   }
 
@@ -150,6 +172,7 @@ export const createBooking = async (req, res) => {
   }
   
   try {
+
     // Calculate pricing with bulk discount using auto-adjusted ticket count
     const priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
     
@@ -158,7 +181,8 @@ export const createBooking = async (req, res) => {
       num_tickets: parseInt(finalTicketCount),
       pass_type,
       ticket_type,
-      pricing: priceInfo,
+      total_amount: totalAmount,
+      discount: totalDiscount,
       status: 'pending'
     });
     
@@ -176,12 +200,17 @@ export const createBooking = async (req, res) => {
         ADD COLUMN IF NOT EXISTS staff_notes TEXT,
         ADD COLUMN IF NOT EXISTS manual_confirmation BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS confirmed_by INTEGER,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS pass_details JSONB
       `);
     } catch (alterError) {
       console.log('Schema update info:', alterError.message);
     }
 
+    // For database compatibility, we'll store the primary pass type and total tickets
+    // But also store the complete pass details in a JSON field
+    const primaryPassType = Object.keys(bookingPasses)[0] || 'female';
+    
     const result = await query(`
       INSERT INTO bookings (
         booking_date, 
@@ -195,23 +224,45 @@ export const createBooking = async (req, res) => {
         is_season_pass,
         bulk_discount_applied,
         original_ticket_price,
-        discounted_price
+        discounted_price,
+        pass_details
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
       parsedDate, 
+
       parseInt(finalTicketCount), 
       pass_type, 
+
       ticket_type,
       'pending', 
-      priceInfo.totalAmount, 
-      priceInfo.savings || 0, 
-      priceInfo.totalAmount,
+      totalAmount, 
+      totalDiscount, 
+      totalAmount,
       ticket_type === 'season',
-      priceInfo.discountApplied || false,
-      priceInfo.basePrice,
-      priceInfo.finalPrice
+      discountApplied,
+      totalAmount + totalDiscount,
+      totalAmount,
+      JSON.stringify({ 
+        passes: bookingPasses, 
+        details: passDetails,
+        original_passes: original_passes || bookingPasses,
+        couple_conversion: original_passes && original_passes.couple ? {
+          couple_tickets: original_passes.couple,
+          converted_to: {
+            male: original_passes.couple,
+            female: original_passes.couple
+          }
+        } : null,
+        family_conversion: original_passes && original_passes.family ? {
+          family_tickets: original_passes.family,
+          converted_to: {
+            male: original_passes.family * 2,
+            female: original_passes.family * 2
+          }
+        } : null
+      })
     ]);
     
     // Check if we actually got a result (database available)
@@ -231,17 +282,40 @@ export const createBooking = async (req, res) => {
       // Database is offline, create mock booking
       console.log('⚠️ Database offline - creating mock booking');
       const mockBookingId = Date.now().toString();
+
       const totalAmount = computeTotalAmount(pass_type, finalTicketCount) || 0;
+
       
       const mockBooking = {
         id: mockBookingId,
         booking_date: parsedDate.toISOString(),
+
         num_tickets: parseInt(finalTicketCount),
         pass_type,
+
         status: 'pending',
         total_amount: totalAmount,
-        discount_amount: 0,
+        discount_amount: totalDiscount,
         final_amount: totalAmount,
+        pass_details: JSON.stringify({ 
+          passes: bookingPasses, 
+          details: passDetails,
+          original_passes: original_passes || bookingPasses,
+          couple_conversion: original_passes && original_passes.couple ? {
+            couple_tickets: original_passes.couple,
+            converted_to: {
+              male: original_passes.couple,
+              female: original_passes.couple
+            }
+          } : null,
+          family_conversion: original_passes && original_passes.family ? {
+            family_tickets: original_passes.family,
+            converted_to: {
+              male: original_passes.family * 2,
+              female: original_passes.family * 2
+            }
+          } : null
+        }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         _isMockBooking: true
@@ -314,7 +388,28 @@ export const createBooking = async (req, res) => {
 export const addUserDetails = async (req, res) => {
   const { booking_id, name, email, phone, is_primary = false } = req.body;
   
+  // Validate required fields
+  if (!booking_id || !name) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "booking_id and name are required" 
+    });
+  }
+  
   try {
+    // First, check if the booking exists
+    const bookingCheck = await query(`
+      SELECT id FROM bookings WHERE id = $1
+    `, [parseInt(booking_id)]);
+    
+    if (bookingCheck.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Booking with ID ${booking_id} not found. Please create the booking first.` 
+      });
+    }
+    
+    // If booking exists, proceed to add user
     const result = await query(`
       INSERT INTO users (booking_id, name, email, phone, is_primary)
       VALUES ($1, $2, $3, $4, $5)
@@ -333,6 +428,23 @@ export const addUserDetails = async (req, res) => {
     res.status(201).json({ success: true, user: userResponse });
   } catch (err) {
     console.error("Error adding user details:", err);
+    
+    // Handle specific database errors
+    if (err.code === '23503') { // Foreign key constraint violation
+      return res.status(400).json({ 
+        success: false, 
+        error: `Invalid booking_id: ${booking_id}. Booking not found.`,
+        code: 'BOOKING_NOT_FOUND'
+      });
+    }
+    
+    if (err.code === '23505') { // Unique constraint violation
+      return res.status(400).json({ 
+        success: false, 
+        error: "User with this email already exists for this booking",
+        code: 'DUPLICATE_USER'
+      });
+    }
     
     // Check if this is a database connection error
     const isConnectionError = err.code === 'ENETUNREACH' || 
@@ -367,7 +479,159 @@ export const addUserDetails = async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: "Failed to add user details",
+      details: err.message,
+    });
+  }
+};
+
+// Helper function to get booking details
+export const getBookingDetails = async (req, res) => {
+  const { booking_id } = req.params;
+  
+  if (!booking_id) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "booking_id is required" 
+    });
+  }
+  
+  try {
+    const result = await query(`
+      SELECT 
+        b.*,
+        COUNT(u.id) as user_count,
+        COUNT(q.id) as qr_count
+      FROM bookings b
+      LEFT JOIN users u ON b.id = u.booking_id
+      LEFT JOIN qr_codes q ON b.id = q.booking_id
+      WHERE b.id = $1
+      GROUP BY b.id
+    `, [parseInt(booking_id)]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Booking with ID ${booking_id} not found` 
+      });
+    }
+    
+    const booking = result.rows[0];
+    
+    // Convert BigInt fields to strings for JSON serialization
+    const bookingResponse = {
+      ...booking,
+      id: booking.id.toString(),
+      user_count: parseInt(booking.user_count),
+      qr_count: parseInt(booking.qr_count)
+    };
+    
+    res.json({ success: true, booking: bookingResponse });
+  } catch (err) {
+    console.error("Error getting booking details:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to get booking details",
       details: err.message 
+    });
+  }
+};
+
+// Test email endpoint - allows sending test emails to any address
+export const testEmail = async (req, res) => {
+  const { email, name = 'Test User', subject = 'Test Email from Malang Events' } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "email is required" 
+    });
+  }
+  
+  try {
+    console.log(`🧪 Testing email to: ${email}`);
+    
+    const emailResult = await sendTicketEmail(
+      email,
+      subject,
+      name,
+      [] // No attachments for test
+    );
+    
+    // Handle frontend-like response format
+    res.json({ 
+      success: true, 
+      message: `Test email sent successfully to ${email}`,
+      data: emailResult.data || {},
+      meta: emailResult.meta || {},
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Test email failed:', error);
+    
+    // Handle frontend-like error format
+    const statusCode = error.code === 'INVALID_EMAIL_FORMAT' ? 400 : 
+                      error.code === 'SERVICE_UNAVAILABLE' ? 503 : 500;
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      error: error.message || "Failed to send test email",
+      code: error.code || 'EMAIL_SEND_FAILED',
+      details: error.originalError || error.message,
+      timestamp: error.timestamp || new Date().toISOString()
+    });
+  }
+};
+
+// Test WhatsApp endpoint - allows sending test WhatsApp messages to any number
+export const testWhatsApp = async (req, res) => {
+  const { 
+    phone, 
+    name = 'Test User',
+    bookingId = 'TEST-' + Date.now(),
+    passType = 'female'
+  } = req.body;
+  
+  if (!phone) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "phone number is required" 
+    });
+  }
+  
+  try {
+    console.log(`🧪 Testing WhatsApp to: ${phone}`);
+    
+    const testBookingDetails = {
+      bookingId: bookingId,
+      date: 'September 24, 2025',
+      time: '7:00 PM onwards',
+      venue: 'Event Ground, Malang',
+      passType: passType.toUpperCase(),
+      amount: 399,
+      ticketCount: 1
+    };
+
+    const result = await whatsappService.sendBookingConfirmation(
+      phone,
+      name,
+      testBookingDetails,
+      null // No PDF for test
+    );
+    
+    res.json({ 
+      success: true, 
+      message: `Test WhatsApp sent successfully to ${phone}`,
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Test WhatsApp failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to send test WhatsApp",
+      details: error.message 
     });
   }
 };
@@ -378,12 +642,10 @@ export const createPayment = async (req, res) => {
   
   try {
     let computedAmount = null;
-    let bookingPassType = null;
-    let bookingQty = 1;
     
-    // Fetch booking to get authoritative pass_type and num_tickets
+    // Fetch booking to get complete pass details for accurate pricing
     const result = await query(`
-      SELECT pass_type, num_tickets FROM bookings WHERE id = $1
+      SELECT pass_type, num_tickets, total_amount, pass_details FROM bookings WHERE id = $1
     `, [parseInt(booking_id)]);
     
     if (result.rows.length === 0) {
@@ -391,12 +653,24 @@ export const createPayment = async (req, res) => {
     }
     
     const booking = result.rows[0];
-    bookingPassType = booking.pass_type;
-    bookingQty = booking.num_tickets;
-    computedAmount = computeTotalAmount(bookingPassType, bookingQty);
-    if (computedAmount === null) {
-      return res.status(400).json({ success: false, error: `Unsupported pass_type: ${bookingPassType}` });
+    
+    // Use the pre-calculated total_amount from booking creation (which correctly handles multiple pass types)
+    computedAmount = booking.total_amount;
+    
+    // Fallback to old calculation method if total_amount is null/zero
+    if (!computedAmount || computedAmount <= 0) {
+      console.warn('Warning: Using fallback pricing calculation');
+      computedAmount = computeTotalAmount(booking.pass_type, booking.num_tickets);
     }
+    
+    if (!computedAmount || computedAmount <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Unable to calculate amount for booking ${booking_id}` 
+      });
+    }
+    
+    console.log(`💰 Payment amount for booking ${booking_id}: ₹${computedAmount}`);
     
     // Check if Razorpay is initialized
     if (!razorpay) {
@@ -593,46 +867,76 @@ async function sendTicketNotifications(booking_id, payment_id) {
     const qrCode = booking.qr_codes.length > 0 ? booking.qr_codes[0] : null;
     const payment = booking.payments.length > 0 ? booking.payments[0] : null;
 
-    // Generate PDF tickets for all QR codes (multiple tickets)
+    // Generate PDF tickets - Single single PDF with multi-page PDF approach
     let pdfAttachments = [];
     try {
       if (booking.qr_codes && booking.qr_codes.length > 0) {
-        const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
+        const { generateMultipleTicketsPDFBuffer } = await import("../utils/pdfGenerator.js");
         
-        // Generate a PDF for each ticket/QR code
-        for (let i = 0; i < booking.qr_codes.length; i++) {
-          const qrCodeData = booking.qr_codes[i];
+        // Prepare ticket data for all tickets in this booking
+        const ticketsData = booking.qr_codes.map((qrCodeData, i) => {
           const ticketUserName = booking.users[i]?.name || primaryUser.name;
           
-          const pdfBuffer = await generateTicketPDFBuffer({
+          return {
             name: ticketUserName,
             date: booking.booking_date,
             pass_type: booking.pass_type,
             qrCode: qrCodeData.qr_code_url,
             booking_id: booking.id.toString(),
-            ticket_number: qrCodeData.ticket_number
-          });
-          
-          pdfAttachments.push({
-            filename: `Dandiya_Ticket_${booking.id}_${i + 1}.pdf`,
-            content: pdfBuffer,
-            contentType: 'application/pdf'
-          });
-        }
+            ticket_number: qrCodeData.ticket_number,
+            venue: "Event Ground, Malang"
+          };
+        });
         
-        console.log(`📄 Generated ${pdfAttachments.length} PDF tickets successfully`);
+        // Generate a single PDF containing all tickets
+        const pdfBuffer = await generateMultipleTicketsPDFBuffer(ticketsData);
+        
+        pdfAttachments.push({
+          filename: `Dandiya_Tickets_${booking.id}_All_${booking.qr_codes.length}_Tickets.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        });
+        
+        console.log(`📄 Generated single PDF with ${booking.qr_codes.length} tickets successfully`);
       }
     } catch (pdfError) {
-      console.error('Error generating PDFs:', pdfError);
+      console.error('Error generating PDF:', pdfError);
       // Continue with other notifications even if PDF generation fails
     }
 
     // Send email notification if email exists
     if (primaryUser.email) {
       try {
+        // Determine email subject based on ticket type
+        let emailSubject;
+        let originalPassDetails = null;
+        if (booking.pass_details) {
+          try {
+            // Handle both string and object cases
+            originalPassDetails = typeof booking.pass_details === 'string' 
+              ? JSON.parse(booking.pass_details) 
+              : booking.pass_details;
+          } catch (parseError) {
+            console.warn('Failed to parse pass_details for email:', parseError.message);
+            originalPassDetails = null;
+          }
+        }
+        const hasOriginalCoupleTickets = originalPassDetails?.original_passes?.couple > 0;
+        const hasOriginalFamilyTickets = originalPassDetails?.original_passes?.family > 0;
+        
+        if (hasOriginalCoupleTickets) {
+          const coupleCount = originalPassDetails.couple_conversion?.couple_tickets || 1;
+          emailSubject = `Your Dandiya Night Couple Tickets #${booking.id} (${coupleCount} couple ticket${coupleCount > 1 ? 's' : ''} - ${coupleCount * 2} individual passes)`;
+        } else if (hasOriginalFamilyTickets) {
+          const familyCount = originalPassDetails.family_conversion?.family_tickets || 1;
+          emailSubject = `Your Dandiya Night Family Tickets #${booking.id} (${familyCount} family ticket${familyCount > 1 ? 's' : ''} - ${familyCount * 4} individual passes)`;
+        } else {
+          emailSubject = `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`;
+        }
+        
         const emailData = {
           to: primaryUser.email,
-          subject: `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
+          subject: emailSubject,
           booking: booking,
           userName: primaryUser.name,
           qrCodeUrl: qrCode?.qr_code_url
@@ -643,15 +947,31 @@ async function sendTicketNotifications(booking_id, payment_id) {
           emailData.attachments = pdfAttachments;
         }
         
-        await sendTicketEmail(
+        const emailResult = await sendTicketEmail(
           primaryUser.email,
-          `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`,
+          emailSubject,
           primaryUser.name,
           emailData.attachments
         );
-        console.log(`📧 Email notification sent to: ${primaryUser.email} with ${pdfAttachments.length} ticket PDFs`);
+        
+        // Log success with frontend-like details
+        const attachmentDescription = pdfAttachments.length > 0 
+          ? `with 1 PDF containing all ${booking.num_tickets} tickets`
+          : 'without PDF attachment (generation failed)';
+        console.log(`📧 Email notification sent successfully!`);
+        console.log(`📧 Recipient: ${primaryUser.email}`);
+        console.log(`📧 Message ID: ${emailResult.data?.messageId || 'N/A'}`);
+        console.log(`📧 Attachments: ${attachmentDescription}`);
+        console.log(`📧 Service: ${emailResult.meta?.service || 'resend'}`);
+        
       } catch (emailError) {
         console.error('Failed to send email:', emailError);
+        console.error('📧 Error Code:', emailError.code || 'UNKNOWN');
+        console.error('📧 User-friendly message:', emailError.message);
+        console.error('📧 Technical details:', emailError.originalError || emailError.message);
+        
+        // Continue with booking process even if email fails
+        // Could optionally log this failure for later retry
       }
     }
 
@@ -660,6 +980,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
       try {
         const phoneNumber = primaryUser.phone.replace(/^\+?91|\s+/g, '');
         
+
         // Generate PDF for WhatsApp attachment
         let pdfBuffer = null;
         try {
@@ -687,6 +1008,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
           bookingId: booking.id.toString(),
           pdfBuffer: pdfBuffer
         });
+
         console.log('💬 WhatsApp notification sent to:', phoneNumber);
       } catch (whatsappError) {
         console.error('Failed to send WhatsApp message:', whatsappError);
