@@ -520,32 +520,47 @@ async function generateSingleTicketPage(doc, ticketData) {
       }
 }
 
-// Enhanced file-based version
-export const generateDandiyaTicketPDF = async (ticketData) => {
+// Enhanced buffer-based version for booking objects with multiple tickets
+export const generateDandiyaTicketPDF = async (bookingData) => {
   return new Promise(async (resolve, reject) => {
-      const { name, date, pass_type, qrCode, booking_id, ticket_number, venue } = ticketData || {};
+    // Check if it's a single ticket (old format) or booking object (new format)
+    if (!bookingData) {
+      return reject(new Error('No booking data provided'));
+    }
 
-      // Ensure output directory exists
-      const ticketsDir = path.join(process.cwd(), "tickets");
+    // If it's a single ticket format (has name, pass_type directly)
+    if (bookingData.name && bookingData.pass_type && !bookingData.tickets) {
       try {
-         if (!fs.existsSync(ticketsDir)) {
-            fs.mkdirSync(ticketsDir, { recursive: true });
-         }
-      } catch (dirErr) {
-         return reject(dirErr);
-      }
-
-      try {
-        const pdfBuffer = await generateDandiyaTicketPDFBuffer(ticketData);
-        const fileName = `dandiya-ticket-${booking_id || Date.now()}.pdf`;
-        const filePath = path.join(ticketsDir, fileName);
-        
-        fs.writeFileSync(filePath, pdfBuffer);
-        resolve(filePath);
-        
+        const pdfBuffer = await generateDandiyaTicketPDFBuffer(bookingData);
+        return resolve(pdfBuffer);
       } catch (error) {
-        reject(error);
+        return reject(error);
       }
+    }
+
+    // If it's a booking object with multiple tickets
+    if (bookingData.tickets && Array.isArray(bookingData.tickets)) {
+      try {
+        // Transform booking data to the format expected by generateMultipleTicketsPDFBuffer
+        const ticketsData = bookingData.tickets.map(ticket => ({
+          name: ticket.name,
+          date: bookingData.date,
+          pass_type: ticket.pass_type,
+          ticket_type: bookingData.ticket_type || 'single',
+          qrCode: ticket.qrCode,
+          booking_id: bookingData.id,
+          ticket_number: ticket.id,
+          venue: bookingData.venue || 'Regal Lawns, Beed Bypass'
+        }));
+        
+        const pdfBuffer = await generateMultipleTicketsPDFBuffer(ticketsData);
+        return resolve(pdfBuffer);
+      } catch (error) {
+        return reject(error);
+      }
+    }
+
+    return reject(new Error('Invalid booking data format'));
   });
 };
 
@@ -668,8 +683,14 @@ export const generateMultipleTicketsPDFBuffer = async (ticketsData) => {
         // Add new page for each ticket
         doc.addPage({ size: 'A4', margin: 50 });
         
+        // Get colors for this ticket and add to ticket data
+        const ticketWithColors = {
+          ...ticketsData[i],
+          passTypeColors: getTicketColors(ticketsData[i].pass_type, ticketsData[i].ticket_type)
+        };
+        
         // Generate full page ticket
-        await generateSingleTicketPage(doc, ticketsData[i]);
+        await generateSingleTicketPage(doc, ticketWithColors);
       }
 
       doc.end();
