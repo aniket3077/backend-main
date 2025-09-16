@@ -14,29 +14,29 @@ dotenv.config();
  * Supports season pass, bulk discounts, and new pricing structure
  */
 
-// Updated pricing structure for Malang Raas Dandiya 2025 - Exact format matching UI
+// Updated pricing structure for Malang Raas Dandiya 2025 - All tickets ₹5
 const TICKET_PRICING = {
   // Single Day Tickets
   single: {
-    female: { base: 399, bulk_threshold: 6, bulk_price: 300 },
-    male: { base: 499, bulk_threshold: 6, bulk_price: 400 },
-    couple: { base: 799, bulk_threshold: 6, bulk_price: 600 },
-    family: { base: 1499, bulk_threshold: 6, bulk_price: 1200 },
-    group: { base: 1999, bulk_threshold: 6, bulk_price: 1600 },
-    kids: { base: 99, bulk_threshold: 6, bulk_price: 80 },
-    kid: { base: 99, bulk_threshold: 6, bulk_price: 80 }, // Backward compatibility
-    family4: { base: 1499, bulk_threshold: 6, bulk_price: 1200 } // Backward compatibility
+    female: { base: 5, bulk_threshold: 6, bulk_price: 5 },
+    male: { base: 5, bulk_threshold: 6, bulk_price: 5 },
+    couple: { base: 5, bulk_threshold: 6, bulk_price: 5 },
+    family: { base: 5, bulk_threshold: 6, bulk_price: 5 },
+    group: { base: 5, bulk_threshold: 6, bulk_price: 5 },
+    kids: { base: 5, bulk_threshold: 6, bulk_price: 5 },
+    kid: { base: 5, bulk_threshold: 6, bulk_price: 5 }, // Backward compatibility
+    family4: { base: 5, bulk_threshold: 6, bulk_price: 5 } // Backward compatibility
   },
   // Season Pass Tickets (8 Days)
   season: {
-    female: { base: 1999 },
-    male: { base: 2499 },
-    couple: { base: 3499 },
-    family: { base: 5999 },
-    family4: { base: 5999 }, // Backward compatibility
-    group: { base: 7999 },
-    kids: { base: 499 },
-    kid: { base: 499 } // Backward compatibility
+    female: { base: 5 },
+    male: { base: 5 },
+    couple: { base: 5 },
+    family: { base: 5 },
+    family4: { base: 5 }, // Backward compatibility
+    group: { base: 5 },
+    kids: { base: 5 },
+    kid: { base: 5 } // Backward compatibility
   }
 };
 
@@ -93,24 +93,24 @@ try {
   razorpay = null;
 }
 
-// Helper: compute total amount based on pass_type and quantity - Updated pricing
+// Helper: compute total amount based on pass_type and quantity - All tickets ₹5
 function computeTotalAmount(passType, quantity = 1) {
   const priceMap = {
-    female: 399,
-    male: 499,
-    couple: 799,
-    family: 1499,
-    family4: 1499, // Keep for backward compatibility
-    group: 1999,
-    kids: 99,
-    kid: 99, // Keep for backward compatibility
-    season_female: 1999,
-    season_male: 2499,
-    season_couple: 3499,
-    season_family: 5999,
-    season_family4: 5999, // Keep for backward compatibility
-    season_group: 7999,
-    season_kids: 499,
+    female: 5,
+    male: 5,
+    couple: 5,
+    family: 5,
+    family4: 5, // Keep for backward compatibility
+    group: 5,
+    kids: 5,
+    kid: 5, // Keep for backward compatibility
+    season_female: 5,
+    season_male: 5,
+    season_couple: 5,
+    season_family: 5,
+    season_family4: 5, // Keep for backward compatibility
+    season_group: 5,
+    season_kids: 5,
   };
   const unit = priceMap[passType];
   if (!unit) return null;
