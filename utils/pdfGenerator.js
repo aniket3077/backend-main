@@ -8,11 +8,11 @@ import { generateQRCodeBuffer } from "./qrGenerator.js";
  * 🎟️ OFFICIAL TICKET COLOR RULES - Master Implementation
  * 
  * Single Tickets:
- * - Male → White (❌ cannot be purchased alone)
- * - Female → Pink  
- * - Couple → Purple (always 2 tickets in PDF)
- * - Family → Green (always 4 tickets in PDF) 
- * - Kid → Yellow (❌ cannot be purchased alone)
+ * - Male → RED (❌ cannot be purchased alone)
+ * - Female → BLUE  
+ * - Couple → PURPLE (always 2 tickets in PDF)
+ * - Family → GREEN (always 4 tickets in PDF) 
+ * - Kid → YELLOW (❌ cannot be purchased alone)
  * 
  * Season Pass Tickets → Rainbow (with 9 rainbow elements)
  * - Female Season Pass → Rainbow
@@ -40,9 +40,9 @@ const getTicketColors = (passType, ticketType = 'single') => {
   // Standard single day tickets
   switch (type) {
     case 'male': 
-      return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' };
+      return { primary: '#FF0000', secondary: '#FF6B6B', name: 'RED' };
     case 'female': 
-      return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' };
+      return { primary: '#0066FF', secondary: '#87CEEB', name: 'BLUE' };
     case 'couple': 
       return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
     case 'family':
