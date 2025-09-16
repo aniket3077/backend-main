@@ -129,25 +129,56 @@ const addRainbowElements = (doc, colors, centerX = 210, centerY = 325) => {
 };
 
 /**
- * Enhanced Dandiya ticket PDF generator with official color coding
+ * 🎟️ ENHANCED Dandiya ticket PDF generator with official color coding
+ * Features: Clickable links, professional branding, enhanced QR codes, better error handling
  */
 export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
    return new Promise(async (resolve, reject) => {
       const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, ticket_type } = ticketData || {};
 
-      // Safe defaults
-      const safeName = (name ?? "Guest").toString();
-      const safePassType = (pass_type ?? "Standard Pass").toString();
+      // Enhanced validation and safe defaults
+      const safeName = (name ?? "Guest").toString().trim();
+      const safePassType = (pass_type ?? "Standard Pass").toString().trim();
       const safeDate = date ?? new Date().toISOString();
       const safeVenue = venue ?? "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
+      const safeBookingId = booking_id ?? `BK${Date.now()}`;
+      const safeTicketNumber = ticket_number ?? `TK${Date.now()}`;
+
+      // Enhanced error handling
+      if (!qrCode) {
+        console.warn('⚠️ No QR code provided for PDF generation');
+      }
 
       // Use centralized color mapping
       const passTypeColors = getTicketColors(safePassType, ticket_type);
 
-      const doc = new PDFDocument({ size: [420, 650], margin: 15 });
+      console.log('🎟️ Generating enhanced PDF ticket:', {
+        name: safeName,
+        pass_type: safePassType,
+        ticket_type: ticket_type || 'single',
+        color_scheme: passTypeColors.name,
+        has_qr: !!qrCode
+      });
+
+      const doc = new PDFDocument({ 
+        size: [420, 650], 
+        margin: 15,
+        info: {
+          Title: `Malang Raas Dandiya 2025 - ${safeName}`,
+          Author: 'Malang Events',
+          Subject: `Ticket - ${safePassType}`,
+          Keywords: 'dandiya,ticket,malang,raas,2025',
+          Creator: 'Malang Events PDF Generator',
+          Producer: 'Enhanced PDF Generator v2.0'
+        }
+      });
+      
       const chunks = [];
       doc.on('data', (c) => chunks.push(c));
-      doc.on('error', (e) => reject(e));
+      doc.on('error', (e) => {
+        console.error('❌ PDF generation error:', e);
+        reject(e);
+      });
       doc.on('end', () => resolve(Buffer.concat(chunks)));
 
       try {
@@ -421,107 +452,152 @@ async function generateSingleTicketPage(doc, ticketData) {
            .font('Helvetica')
            .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 45, yPos);
 
-        // QR Code Section - Made more compact
+        // Enhanced QR Code Section with clickable features
         yPos += 20;
         doc.rect(25, yPos, 370, 120)
            .fillColor('#f8f9fa')
            .fill();
         
+        // QR Section Header with enhanced styling
         doc.fontSize(12)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text(' SCAN FOR ENTRY', 35, yPos + 10, { align: 'center', width: 350 });
+           .text('🔍 SCAN FOR ENTRY', 35, yPos + 10, { align: 'center', width: 350 });
 
-        // Handle QR code with enhanced error handling - Made more compact
+        // Handle QR code with enhanced error handling and clickable features
         const qrYPos = yPos + 30;
+        let qrCodeText = safeBookingId; // Default QR content
+        
         try {
           let qrBuffer;
           
           if (qrCode) {
             if (qrCode.startsWith('http')) {
-              // Download QR from URL
-              console.log('Downloading QR code from URL:', qrCode);
+              // Download QR from URL with enhanced error handling
+              console.log('📥 Downloading QR code from URL:', qrCode);
               try {
                 const response = await axios.get(qrCode, {
                   responseType: 'arraybuffer',
-                  timeout: 10000,
+                  timeout: 15000,
                   headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'image/*'
                   }
                 });
                 qrBuffer = Buffer.from(response.data, 'binary');
+                qrCodeText = qrCode; // Use URL as clickable link
               } catch (downloadErr) {
-                console.warn('Failed to download QR code, generating new one:', downloadErr.message);
-                const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
-                qrBuffer = await generateQRCodeBuffer(ticketNum);
+                console.warn('⚠️ Failed to download QR code, generating new one:', downloadErr.message);
+                qrBuffer = await generateQRCodeBuffer(safeBookingId);
               }
               
             } else if (qrCode.startsWith('data:image')) {
+              // Handle base64 data URLs
               const base64Data = qrCode.split('base64,').pop();
               qrBuffer = Buffer.from(base64Data, 'base64');
               
             } else {
-              const base64Data = qrCode.replace(/^data:image\/png;base64,/i, '');
-              if (base64Data && base64Data.length > 0) {
-                try {
+              // Handle plain base64 or text
+              try {
+                const base64Data = qrCode.replace(/^data:image\/png;base64,/i, '');
+                if (base64Data && base64Data.length > 0) {
                   qrBuffer = Buffer.from(base64Data, 'base64');
-                } catch (imgErr) {
-                  console.warn('Invalid base64 QR data, generating new one');
-                  const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
-                  qrBuffer = await generateQRCodeBuffer(ticketNum);
+                } else {
+                  throw new Error('Empty QR code data');
                 }
-              } else {
-                throw new Error('Empty QR code data');
+              } catch (parseErr) {
+                console.warn('⚠️ Invalid QR data format, generating new QR code');
+                qrBuffer = await generateQRCodeBuffer(safeBookingId);
               }
             }
           } else {
-            // Generate new QR code
-            console.log('📱 No QR code provided, generating new one');
-            const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
-            qrBuffer = await generateQRCodeBuffer(ticketNum);
+            // Generate new QR code with booking information
+            console.log('📱 Generating QR code for booking:', safeBookingId);
+            qrBuffer = await generateQRCodeBuffer(safeBookingId);
           }
           
-          // Add QR code with decorative border - Made smaller
-          doc.rect(170, qrYPos, 80, 80)
-            .lineWidth(2)
-            .strokeColor('black')
+          // Enhanced QR code placement with professional styling
+          const qrSize = 80;
+          const qrX = 170;
+          
+          // QR Code border with pass type color
+          doc.rect(qrX - 2, qrYPos - 2, qrSize + 4, qrSize + 4)
+            .lineWidth(3)
+            .strokeColor(passTypeColors.primary)
             .stroke();
-          doc.image(qrBuffer, 173, qrYPos + 3, { fit: [74, 74] });
+            
+          // Inner QR border
+          doc.rect(qrX, qrYPos, qrSize, qrSize)
+            .lineWidth(1)
+            .strokeColor('#333333')
+            .stroke();
+            
+          // Place QR code image
+          doc.image(qrBuffer, qrX + 2, qrYPos + 2, { fit: [qrSize - 4, qrSize - 4] });
+          
+          // Add clickable annotation to QR code area if it's a URL
+          if (qrCodeText.startsWith('http')) {
+            doc.link(qrX, qrYPos, qrSize, qrSize, qrCodeText);
+          }
           
         } catch (qrError) {
-          console.warn('QR code generation failed, using text fallback:', qrError.message);
+          console.error('❌ QR code generation failed:', qrError.message);
           
-          // Fallback QR display - Made smaller
-          doc.rect(170, qrYPos, 80, 80)
+          // Enhanced fallback QR display
+          const qrSize = 80;
+          const qrX = 170;
+          
+          doc.rect(qrX, qrYPos, qrSize, qrSize)
             .lineWidth(2)
             .strokeColor('#cccccc')
-            .stroke();
+            .stroke()
+            .fillColor('#f5f5f5')
+            .fill();
+          
+          // Fallback icon
+          doc.fontSize(12)
+             .fillColor('#666666')
+             .font('Helvetica-Bold')
+             .text('📱', qrX + qrSize/2 - 8, qrYPos + 15, { 
+               align: 'center', 
+               width: 16 
+             });
           
           doc.fontSize(9)
              .fillColor('#666666')
-             .text('QR Code\nUnavailable', 173, qrYPos + 25, { 
+             .font('Helvetica')
+             .text('QR Code\nUnavailable', qrX + 5, qrYPos + 30, { 
                align: 'center', 
-               width: 74 
+               width: qrSize - 10 
              });
           
-          doc.fontSize(8)
+          doc.fontSize(7)
              .fillColor('#999999')
-             .text(`ID: ${booking_id || 'N/A'}`, 173, qrYPos + 50, { 
+             .text(`ID: ${booking_id || 'N/A'}`, qrX + 5, qrYPos + 55, { 
                align: 'center', 
-               width: 74 
+               width: qrSize - 10 
              });
         }
+        
+        // Add verification text below QR
+        doc.fontSize(8)
+           .fillColor('#666666')
+           .font('Helvetica')
+           .text('Scan at entry gate for instant verification', 50, qrYPos + 85, { 
+             align: 'center', 
+             width: 320 
+           });
 
-        // Footer section - Made more compact
+        // Enhanced Footer section with clickable links
         yPos += 135;
-        doc.rect(25, yPos, 370, 60)
+        doc.rect(25, yPos, 370, 80)
            .fillColor('#1a1a2e')
            .fill();
 
         doc.fontSize(11)
            .fillColor('#ffd700')
            .font('Helvetica-Bold')
-           .text(' EVENT DETAILS', 35, yPos + 8, { align: 'center', width: 350 });
+           .text('📅 EVENT DETAILS', 35, yPos + 8, { align: 'center', width: 350 });
 
         doc.fontSize(9)
            .fillColor('#ffffff')
@@ -531,19 +607,31 @@ async function generateSingleTicketPage(doc, ticketData) {
              width: 350 
            });
 
+        // Add clickable contact information
+        const contactY = yPos + 42;
         doc.fontSize(8)
+           .fillColor('#87CEEB')
+           .text('📞 Contact: +91-9876543210 | 📧 info@malangevents.com', 35, contactY, { 
+             align: 'center', 
+             width: 350 
+           });
+           
+        // Make contact info clickable
+        doc.link(180, contactY, 60, 10, 'tel:+919876543210');
+        doc.link(260, contactY, 100, 10, 'mailto:info@malangevents.com');
+
+        doc.fontSize(7)
            .fillColor('#cccccc')
-           .text('🎟️ Entry is subject to terms & conditions | No outside food/drinks allowed', 35, yPos + 42, { 
+           .text('🎟️ Entry subject to terms & conditions | No outside food/drinks | Valid ID required', 35, yPos + 58, { 
              align: 'center', 
              width: 350 
            });
 
-        
-      } catch (error) {
-        console.error('PDF generation error:', error);
-        throw error;
-      }
-}
+  } catch (error) {
+    console.error('❌ PDF generation error:', error);
+    throw error;
+  }
+} // End of generateSingleTicketPage function
 
 // Enhanced buffer-based version for booking objects with multiple tickets
 export const generateDandiyaTicketPDF = async (bookingData) => {

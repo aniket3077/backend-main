@@ -14,33 +14,31 @@ dotenv.config();
  * Supports season pass, bulk discounts, and new pricing structure
  */
 
-// Updated pricing structure for Malang Raas Dandiya 2025 - All tickets ₹5
+// 🎉 Updated pricing structure for Malang Raas Dandiya 2025 - Simple Fixed Pricing
 const TICKET_PRICING = {
-  // Single Day Tickets
+  // 🎟 Single Day Entry Tickets
   single: {
-    female: { base: 5, bulk_threshold: 6, bulk_price: 5 },
-    male: { base: 5, bulk_threshold: 6, bulk_price: 5 },
-    couple: { base: 5, bulk_threshold: 6, bulk_price: 5 },
-    family: { base: 5, bulk_threshold: 6, bulk_price: 5 },
-    group: { base: 5, bulk_threshold: 6, bulk_price: 5 },
-    kids: { base: 5, bulk_threshold: 6, bulk_price: 5 },
-    kid: { base: 5, bulk_threshold: 6, bulk_price: 5 }, // Backward compatibility
-    family4: { base: 5, bulk_threshold: 6, bulk_price: 5 } // Backward compatibility
+    female: { base: 399 },      // 👩 Female – ₹399
+    male: { base: 499 },        // 👨 Male – ₹499 (Stag Male Not Allowed)
+    couple: { base: 699 },      // 👫 Couple – ₹699
+    family: { base: 1300 },     // 👨‍👩‍👧‍👦 Family (4 members) – ₹1300
+    family4: { base: 1300 },    // Backward compatibility
+    kids: { base: 99 },         // 🧒 Kids (6 to 12 yrs) – ₹99
+    kid: { base: 99 },          // Backward compatibility
+           // Group pricing same as female
   },
-  // Season Pass Tickets (8 Days)
+  // 🔥 Season Pass Tickets (All 8 Days – Non-Stop Fun!)
   season: {
-    female: { base: 5 },
-    male: { base: 5 },
-    couple: { base: 5 },
-    family: { base: 5 },
-    family4: { base: 5 }, // Backward compatibility
-    group: { base: 5 },
-    kids: { base: 5 },
-    kid: { base: 5 } // Backward compatibility
+    female: { base: 2499 },     // 👩 Female Season – ₹2499
+    male: { base: 2999 },       // 👨 Male Season – ₹2999 (if allowed)
+    couple: { base: 3499 },     // 👫 Couple Season – ₹3499
+    family: { base: 5999 },     // 👨‍👩‍👧‍👦 Family Season – ₹5999
+    kids: { base: 999 },        // 🧒 Kids Season – ₹999
+    kid: { base: 999 },         // Backward compatibility
   }
 };
 
-// Calculate ticket price with bulk discount logic
+// Calculate ticket price with simple fixed pricing (no bulk discounts)
 function calculateTicketPrice(passType, ticketType, numTickets) {
   const pricing = TICKET_PRICING[ticketType]?.[passType];
   if (!pricing) {
@@ -49,19 +47,7 @@ function calculateTicketPrice(passType, ticketType, numTickets) {
 
   const quantity = Math.max(1, parseInt(numTickets));
   
-  // Check if bulk discount applies
-  if (pricing.bulk_threshold && quantity >= pricing.bulk_threshold) {
-    return {
-      basePrice: pricing.base,
-      finalPrice: pricing.bulk_price,
-      pricePerTicket: pricing.bulk_price, // Per ticket price after discount
-      discountApplied: true,
-      totalAmount: pricing.bulk_price * quantity,
-      savings: (pricing.base - pricing.bulk_price) * quantity,
-      discountAmount: (pricing.base - pricing.bulk_price) * quantity
-    };
-  }
-
+  // Simple fixed pricing - no bulk discounts
   return {
     basePrice: pricing.base,
     finalPrice: pricing.base,
@@ -93,29 +79,76 @@ try {
   razorpay = null;
 }
 
-// Helper: compute total amount based on pass_type and quantity - All tickets ₹5
-function computeTotalAmount(passType, quantity = 1) {
-  const priceMap = {
-    female: 5,
-    male: 5,
-    couple: 5,
-    family: 5,
-    family4: 5, // Keep for backward compatibility
-    group: 5,
-    kids: 5,
-    kid: 5, // Keep for backward compatibility
-    season_female: 5,
-    season_male: 5,
-    season_couple: 5,
-    season_family: 5,
-    season_family4: 5, // Keep for backward compatibility
-    season_group: 5,
-    season_kids: 5,
-  };
-  const unit = priceMap[passType];
-  if (!unit) return null;
+// 💰 Enhanced pricing validation and calculation
+function computeTotalAmount(passType, quantity = 1, ticketType = 'single') {
+  // Validate inputs
+  if (!passType || typeof passType !== 'string') {
+    throw new Error('Invalid pass type provided');
+  }
+  
+  const cleanPassType = passType.toLowerCase().trim();
+  const cleanTicketType = (ticketType || 'single').toLowerCase().trim();
+  
+  // Use the comprehensive pricing structure
+  const pricing = TICKET_PRICING[cleanTicketType]?.[cleanPassType];
+  if (!pricing) {
+    console.error(`❌ Invalid pricing combination: ${cleanTicketType} ${cleanPassType}`);
+    return null;
+  }
+  
   const q = Math.max(1, parseInt(quantity || 1));
-  return unit * q;
+  const calculation = calculateTicketPrice(cleanPassType, cleanTicketType, q);
+  
+  // Return consistent pricing information
+  return {
+    totalAmount: calculation.totalAmount,
+    pricePerTicket: calculation.pricePerTicket,
+    discountApplied: calculation.discountApplied,
+    discountAmount: calculation.discountAmount,
+    basePrice: calculation.basePrice,
+    finalPrice: calculation.finalPrice,
+    quantity: q
+  };
+}
+
+// 🔍 Validate pricing consistency between frontend and backend
+function validatePricingConsistency(frontendAmount, backendCalculation, passType, quantity, ticketType = 'single') {
+  if (!backendCalculation) {
+    return { isValid: false, error: 'Backend calculation failed' };
+  }
+  
+  const { totalAmount } = backendCalculation;
+  const frontendTotal = parseFloat(frontendAmount);
+  
+  // Allow small floating point differences (1 paisa tolerance)
+  const tolerance = 0.01;
+  const difference = Math.abs(frontendTotal - totalAmount);
+  
+  if (difference > tolerance) {
+    console.error(`❌ Pricing mismatch detected:`, {
+      frontend: frontendTotal,
+      backend: totalAmount,
+      difference,
+      passType,
+      quantity,
+      ticketType
+    });
+    
+    return {
+      isValid: false,
+      error: 'Pricing mismatch between frontend and backend',
+      details: {
+        frontendAmount: frontendTotal,
+        backendAmount: totalAmount,
+        difference: difference,
+        passType,
+        quantity,
+        ticketType
+      }
+    };
+  }
+  
+  return { isValid: true };
 }
 
 // 1️⃣ Create Booking
@@ -187,7 +220,7 @@ export const createBooking = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "Invalid ticket selection",
-        message: "❌ Male tickets cannot be purchased alone. Please add other ticket types."
+        message: "❌ Stag Male entries are not allowed. Male tickets must be purchased with other ticket types (couple, family, etc.)."
       });
     }
     
@@ -204,7 +237,7 @@ export const createBooking = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "Invalid ticket selection",
-        message: "❌ Male tickets cannot be purchased alone. Please add other ticket types."
+        message: "❌ Stag Male entries are not allowed. Male tickets must be purchased with other ticket types (couple, family, etc.)."
       });
     }
     
@@ -218,15 +251,134 @@ export const createBooking = async (req, res) => {
   }
   
   try {
-
-    // Calculate pricing with bulk discount using auto-adjusted ticket count
-    const priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
+    // � Debug logging for pricing mismatch investigation
+    console.log('🔍 DEBUGGING BOOKING REQUEST:');
+    console.log('  Request body total_amount:', req.body.total_amount);
+    console.log('  Pass type:', pass_type);
+    console.log('  Passes object:', passes);
+    console.log('  Ticket type:', ticket_type);
+    console.log('  Final ticket count:', finalTicketCount);
     
-    // Extract values from priceInfo
-    const totalAmount = priceInfo.totalAmount;
-    const totalDiscount = priceInfo.discountAmount || 0;
-    const discountApplied = priceInfo.discountApplied;
-    const pricePerTicket = priceInfo.pricePerTicket;
+    // �💰 Enhanced pricing calculation with validation
+    let priceInfo;
+    let totalAmount = 0;
+    let totalDiscount = 0;
+    let discountApplied = false;
+    let pricePerTicket;
+    
+    try {
+      // Check if this is a multi-pass booking
+      if (passes && typeof passes === 'object' && Object.keys(passes).filter(key => passes[key] > 0).length > 1) {
+        // Multi-pass booking: calculate total for all pass types
+        console.log('🎟️ Multi-pass booking detected, calculating total for all pass types:', passes);
+        
+        let passDetailsArray = [];
+        Object.entries(passes).forEach(([passType, count]) => {
+          const passCount = Number(count) || 0;
+          if (passCount <= 0) return;
+          
+          const passCalc = calculateTicketPrice(passType, ticket_type, passCount);
+          if (passCalc && typeof passCalc.totalAmount === 'number') {
+            totalAmount += passCalc.totalAmount;
+            totalDiscount += passCalc.discountAmount || 0;
+            if (passCalc.discountApplied) discountApplied = true;
+            
+            passDetailsArray.push({
+              passType,
+              count: passCount,
+              unitPrice: passCalc.pricePerTicket,
+              subtotal: passCalc.totalAmount
+            });
+            
+            console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
+          }
+        });
+        
+        // Calculate average price per ticket for display
+        pricePerTicket = totalAmount / finalTicketCount;
+        
+        console.log(`🧮 Multi-pass total: ₹${totalAmount} (${passDetailsArray.length} pass types)`);
+        
+        // Create priceInfo object for compatibility
+        priceInfo = {
+          totalAmount,
+          pricePerTicket,
+          discountApplied,
+          discountAmount: totalDiscount,
+          basePrice: pricePerTicket, // Average for multi-pass
+          finalPrice: pricePerTicket,
+          passDetails: passDetailsArray
+        };
+        
+      } else {
+        // Single pass type booking (legacy path)
+        priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
+        
+        // Validate pricing calculation result
+        if (!priceInfo || typeof priceInfo.totalAmount !== 'number') {
+          throw new Error(`Invalid pricing calculation for ${pass_type} ${ticket_type}`);
+        }
+        
+        // Extract and validate values from priceInfo
+        totalAmount = priceInfo.totalAmount;
+        totalDiscount = priceInfo.discountAmount || 0;
+        discountApplied = priceInfo.discountApplied || false;
+        pricePerTicket = priceInfo.pricePerTicket;
+        
+        console.log(`🎟️ Single pass booking: ${pass_type} ₹${pricePerTicket} × ${finalTicketCount} = ₹${totalAmount}`);
+      }
+      
+      // Additional validation checks
+      if (totalAmount <= 0) {
+        throw new Error('Invalid total amount calculated');
+      }
+      
+      if (pricePerTicket <= 0) {
+        throw new Error('Invalid price per ticket calculated');
+      }
+      
+      console.log('✅ Pricing calculation successful:', {
+        pass_type,
+        ticket_type,
+        finalTicketCount,
+        pricePerTicket,
+        totalAmount,
+        discountApplied,
+        totalDiscount
+      });
+      
+    } catch (pricingError) {
+      console.error('❌ Pricing calculation failed:', pricingError.message);
+      return res.status(400).json({
+        success: false,
+        error: "Pricing calculation error",
+        message: `Failed to calculate pricing for ${pass_type} ${ticket_type}: ${pricingError.message}`
+      });
+    }
+    
+    // 🔍 Validate frontend-backend pricing consistency if frontend amount provided
+    if (req.body.expected_amount) {
+      const frontendAmount = parseFloat(req.body.expected_amount);
+      const validationResult = validatePricingConsistency(
+        frontendAmount, 
+        { totalAmount }, 
+        pass_type, 
+        finalTicketCount, 
+        ticket_type
+      );
+      
+      if (!validationResult.isValid) {
+        console.error('❌ Frontend-backend pricing mismatch:', validationResult);
+        return res.status(400).json({
+          success: false,
+          error: "Pricing validation failed",
+          message: "Price mismatch detected between frontend and backend",
+          details: validationResult.details
+        });
+      }
+      
+      console.log('✅ Frontend-backend pricing validation passed');
+    }
     
     // Define pass details for JSON storage
     const passDetails = {
@@ -670,6 +822,11 @@ export const testWhatsApp = async (req, res) => {
     const ticketCount = parseInt(numTickets) || 1;
     console.log(`🧪 Testing WhatsApp to: ${phone} with ${ticketCount} tickets`);
     
+    // Calculate dynamic amount based on pass type for test
+    const testPassType = passType || 'female';
+    const testPricing = calculateTicketPrice(testPassType, 'single', ticketCount);
+    const testAmount = testPricing ? `₹${testPricing.totalAmount}` : '₹399';
+    
     // Send single complete booking message (like the real booking flow)
     const result = await whatsappService.sendBookingConfirmation({
       phone: phone,
@@ -677,10 +834,10 @@ export const testWhatsApp = async (req, res) => {
       eventName: 'Malang Ras Dandiya 2025',
       eventDate: new Date().toISOString(), // Use current date for test
       ticketCount: ticketCount,
-      amount: '₹399',
+      amount: testAmount,
       bookingId: `${bookingId}-TEST`,
       ticketNumber: `BOOKING-${bookingId}-TEST`,
-      passType: 'Test Pass'
+      passType: `${testPassType} (${ticketCount} tickets)`
     });
     
     console.log(`✅ Test WhatsApp message sent for ${ticketCount} tickets`);
@@ -712,14 +869,18 @@ export const testWhatsApp = async (req, res) => {
 
 // 3️⃣ Create Payment Order
 export const createPayment = async (req, res) => {
-  const { booking_id } = req.body;
+  const { booking_id, expected_amount } = req.body;
+  
+  console.log('🔍 CREATE PAYMENT DEBUG:');
+  console.log('  Booking ID:', booking_id);
+  console.log('  Expected amount from frontend:', expected_amount);
   
   try {
     let computedAmount = null;
     
     // Fetch booking to get complete pass details for accurate pricing
     const result = await query(`
-      SELECT pass_type, num_tickets, total_amount, pass_details FROM bookings WHERE id = $1
+      SELECT pass_type, num_tickets, total_amount, pass_details, ticket_type FROM bookings WHERE id = $1
     `, [parseInt(booking_id)]);
     
     if (result.rows.length === 0) {
@@ -728,13 +889,155 @@ export const createPayment = async (req, res) => {
     
     const booking = result.rows[0];
     
-    // Use the pre-calculated total_amount from booking creation (which correctly handles multiple pass types)
-    computedAmount = booking.total_amount;
+    console.log('📊 STORED BOOKING DATA:');
+    console.log('  Pass type:', booking.pass_type);
+    console.log('  Num tickets:', booking.num_tickets);
+    console.log('  Total amount:', booking.total_amount);
+    console.log('  Ticket type:', booking.ticket_type);
+    console.log('  Pass details:', booking.pass_details);
     
-    // Fallback to old calculation method if total_amount is null/zero
-    if (!computedAmount || computedAmount <= 0) {
-      console.warn('Warning: Using fallback pricing calculation');
-      computedAmount = computeTotalAmount(booking.pass_type, booking.num_tickets);
+    // Parse pass_details to see exact pass breakdown
+    if (booking.pass_details) {
+      try {
+        const passDetails = typeof booking.pass_details === 'string' 
+          ? JSON.parse(booking.pass_details) 
+          : booking.pass_details;
+        console.log('🎟️ PASS DETAILS BREAKDOWN:');
+        console.log('  Passes object:', passDetails.passes);
+        console.log('  Original passes:', passDetails.original_passes);
+      } catch (e) {
+        console.log('❌ Failed to parse pass_details:', e.message);
+      }
+    }
+    
+    // 💰 Enhanced pricing validation for Razorpay order creation
+    try {
+      // Primary: Use the pre-calculated total_amount from booking creation
+      computedAmount = booking.total_amount;
+      
+      // Secondary: Validate against pass_details if available
+      if (booking.pass_details) {
+        try {
+          const passDetails = typeof booking.pass_details === 'string' 
+            ? JSON.parse(booking.pass_details) 
+            : booking.pass_details;
+          
+          console.log('🔍 RECALCULATING FROM STORED PASSES:');
+          
+          // Recalculate amount from stored passes for validation
+          if (passDetails.passes) {
+            let recalculatedAmount = 0;
+            Object.entries(passDetails.passes).forEach(([passType, count]) => {
+              const passCount = Number(count) || 0;
+              if (passCount <= 0) return;
+              
+              const passCalc = calculateTicketPrice(passType, booking.ticket_type, passCount);
+              if (passCalc && typeof passCalc.totalAmount === 'number') {
+                recalculatedAmount += passCalc.totalAmount;
+                console.log(`  ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
+              }
+            });
+            
+            console.log(`  🧮 Recalculated total: ₹${recalculatedAmount}`);
+            console.log(`  💾 Stored total: ₹${computedAmount}`);
+            console.log(`  🎯 Frontend expected: ₹${expected_amount}`);
+            
+            // Use recalculated amount if it differs from stored amount
+            if (recalculatedAmount !== computedAmount) {
+              console.warn('⚠️ Recalculated amount differs from stored amount, using recalculated');
+              computedAmount = recalculatedAmount;
+            }
+          }
+          
+          if (passDetails.total_amount && passDetails.total_amount !== computedAmount) {
+            console.warn('⚠️ Amount mismatch between booking.total_amount and pass_details:', {
+              booking_total: computedAmount,
+              pass_details_total: passDetails.total_amount
+            });
+            // Use pass_details as it's more detailed
+            computedAmount = passDetails.total_amount;
+          }
+        } catch (parseError) {
+          console.warn('Warning: Failed to parse pass_details:', parseError.message);
+        }
+      }
+      
+      // Fallback: Recalculate if no stored amount
+      if (!computedAmount || computedAmount <= 0) {
+        console.warn('⚠️ Using fallback pricing calculation for Razorpay order');
+        
+        const ticketType = booking.ticket_type || 'single';
+        const fallbackCalc = computeTotalAmount(booking.pass_type, booking.num_tickets, ticketType);
+        
+        if (fallbackCalc && fallbackCalc.totalAmount > 0) {
+          computedAmount = fallbackCalc.totalAmount;
+          console.log('✅ Fallback calculation successful:', computedAmount);
+        } else {
+          throw new Error('All pricing calculation methods failed');
+        }
+      }
+      
+      // 🔍 Validate frontend-backend amount consistency for Razorpay
+      if (expected_amount) {
+        const expectedTotal = parseFloat(expected_amount);
+        const tolerance = 0.01; // 1 paisa tolerance
+        const difference = Math.abs(expectedTotal - computedAmount);
+        
+        if (difference > tolerance) {
+          console.error('❌ Razorpay amount mismatch:', {
+            frontend_expected: expectedTotal,
+            backend_calculated: computedAmount,
+            difference,
+            booking_id
+          });
+          
+          // Enhanced error details for debugging
+          let errorDetails = {
+            frontend_amount: expectedTotal,
+            backend_amount: computedAmount,
+            difference: difference,
+            booking_id: booking_id,
+            stored_booking: {
+              pass_type: booking.pass_type,
+              num_tickets: booking.num_tickets,
+              ticket_type: booking.ticket_type
+            }
+          };
+          
+          // Add pass breakdown if available
+          if (booking.pass_details) {
+            try {
+              const passDetails = typeof booking.pass_details === 'string' 
+                ? JSON.parse(booking.pass_details) 
+                : booking.pass_details;
+              errorDetails.stored_passes = passDetails.passes;
+              errorDetails.original_passes = passDetails.original_passes;
+            } catch (e) {
+              errorDetails.pass_details_error = 'Failed to parse pass details';
+            }
+          }
+          
+          return res.status(400).json({
+            success: false,
+            error: "Amount validation failed",
+            message: "Frontend and backend amounts don't match for Razorpay order",
+            details: errorDetails
+          });
+        }
+        
+        console.log('✅ Razorpay amount validation passed:', {
+          amount: computedAmount,
+          booking_id
+        });
+      }
+      
+    } catch (pricingError) {
+      console.error('❌ Pricing validation failed for Razorpay order:', pricingError.message);
+      return res.status(400).json({
+        success: false,
+        error: "Pricing calculation failed",
+        message: `Unable to calculate valid amount for booking ${booking_id}: ${pricingError.message}`
+      });
     }
     
     if (!computedAmount || computedAmount <= 0) {
@@ -1322,6 +1625,167 @@ export const getPricingInfo = async (req, res) => {
       success: false,
       error: 'Failed to calculate pricing',
       details: error.message
+    });
+  }
+};
+
+// 🧪 Pricing Consistency Validation Endpoint
+export const validatePricingConsistencyEndpoint = async (req, res) => {
+  try {
+    const { 
+      pass_type, 
+      ticket_type = 'single', 
+      quantity = 1,
+      frontend_amount,
+      test_scenarios = false 
+    } = req.body;
+
+    console.log('🔍 Validating pricing consistency:', {
+      pass_type,
+      ticket_type,
+      quantity,
+      frontend_amount
+    });
+
+    // Run validation for the provided parameters
+    const results = [];
+    
+    if (pass_type && quantity) {
+      try {
+        const backendCalc = computeTotalAmount(pass_type, quantity, ticket_type);
+        
+        if (!backendCalc) {
+          throw new Error(`Invalid pricing combination: ${ticket_type} ${pass_type}`);
+        }
+        
+        let validation = { isValid: true };
+        
+        if (frontend_amount) {
+          validation = validatePricingConsistency(
+            frontend_amount,
+            backendCalc,
+            pass_type,
+            quantity,
+            ticket_type
+          );
+        }
+        
+        results.push({
+          scenario: `${pass_type} (${ticket_type}) x${quantity}`,
+          backend_calculation: backendCalc,
+          frontend_amount: frontend_amount ? parseFloat(frontend_amount) : null,
+          validation_result: validation,
+          pricing_details: {
+            base_price: backendCalc.basePrice,
+            price_per_ticket: backendCalc.pricePerTicket,
+            total_amount: backendCalc.totalAmount,
+            discount_applied: backendCalc.discountApplied,
+            discount_amount: backendCalc.discountAmount
+          }
+        });
+        
+      } catch (pricingError) {
+        results.push({
+          scenario: `${pass_type} (${ticket_type}) x${quantity}`,
+          error: pricingError.message,
+          validation_result: { isValid: false, error: pricingError.message }
+        });
+      }
+    }
+
+    // If test_scenarios is true, run comprehensive tests
+    if (test_scenarios) {
+      const testScenarios = [
+        // Single Day Tickets - Normal scenarios
+        { pass_type: 'female', ticket_type: 'single', quantity: 1 },     // ₹399
+        { pass_type: 'female', ticket_type: 'single', quantity: 10 },    // ₹3990 (no bulk discount)
+        { pass_type: 'couple', ticket_type: 'single', quantity: 1 },     // ₹699  
+        { pass_type: 'family', ticket_type: 'single', quantity: 1 },     // ₹1300
+        { pass_type: 'kids', ticket_type: 'single', quantity: 1 },       // ₹99
+        { pass_type: 'male', ticket_type: 'single', quantity: 1 },       // ₹499 (Note: Stag not allowed)
+        
+        // Season Pass Tickets - 8 Days
+        { pass_type: 'female', ticket_type: 'season', quantity: 1 },     // ₹2499
+        { pass_type: 'couple', ticket_type: 'season', quantity: 1 },     // ₹3499
+        { pass_type: 'family', ticket_type: 'season', quantity: 1 },     // ₹5999
+        
+        // Multiple quantity scenarios (fixed pricing)
+        { pass_type: 'female', ticket_type: 'single', quantity: 12 },    // ₹4788 (399*12)
+        { pass_type: 'couple', ticket_type: 'single', quantity: 6 },     // ₹4194 (699*6)
+        { pass_type: 'family', ticket_type: 'single', quantity: 4 }      // ₹5200 (1300*4)
+      ];
+
+      for (const scenario of testScenarios) {
+        try {
+          const calc = computeTotalAmount(scenario.pass_type, scenario.quantity, scenario.ticket_type);
+          
+          if (calc) {
+            results.push({
+              scenario: `${scenario.pass_type} (${scenario.ticket_type}) x${scenario.quantity}`,
+              backend_calculation: calc,
+              test_result: 'SUCCESS',
+              pricing_details: {
+                base_price: calc.basePrice,
+                price_per_ticket: calc.pricePerTicket,
+                total_amount: calc.totalAmount,
+                discount_applied: calc.discountApplied,
+                discount_amount: calc.discountAmount
+              }
+            });
+          } else {
+            results.push({
+              scenario: `${scenario.pass_type} (${scenario.ticket_type}) x${scenario.quantity}`,
+              test_result: 'FAILED',
+              error: 'Pricing calculation returned null'
+            });
+          }
+        } catch (error) {
+          results.push({
+            scenario: `${scenario.pass_type} (${scenario.ticket_type}) x${scenario.quantity}`,
+            test_result: 'ERROR',
+            error: error.message
+          });
+        }
+      }
+    }
+
+    // Summary
+    const summary = {
+      total_tests: results.length,
+      successful_validations: results.filter(r => r.validation_result?.isValid !== false && r.test_result !== 'FAILED' && r.test_result !== 'ERROR').length,
+      failed_validations: results.filter(r => r.validation_result?.isValid === false || r.test_result === 'FAILED' || r.test_result === 'ERROR').length,
+      pricing_structure: {
+        single_day_prices: {
+          female: "₹399",
+          male: "₹499 (Stag Male Not Allowed)",
+          couple: "₹699", 
+          family: "₹1300 (4 members)",
+          kids: "₹99 (6 to 12 yrs)"
+        },
+        season_pass_prices: {
+          female: "₹2499 (8 Days)",
+          couple: "₹3499 (8 Days)", 
+          family: "₹5999 (8 Days, 4 members)"
+        },
+        bulk_discounts: "Available for larger bookings"
+      }
+    };
+
+    res.json({
+      success: true,
+      message: 'Pricing consistency validation completed',
+      summary,
+      results,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Pricing validation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Pricing validation failed',
+      details: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 };

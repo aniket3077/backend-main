@@ -62,42 +62,103 @@ class WhatsAppService {
   }
 
   async sendBookingConfirmation(data) {
+    // Enhanced validation and error handling
     if (!this.isConfigured) {
-      console.warn('❌ WhatsApp service not configured');
-      return { success: false, error: 'WhatsApp service not configured' };
+      console.warn('⚠️ WhatsApp service not configured, skipping notification');
+      return { 
+        success: false, 
+        error: 'WhatsApp service not configured',
+        code: 'SERVICE_NOT_CONFIGURED',
+        timestamp: new Date().toISOString()
+      };
     }
 
     try {
       const { phone, name, eventName, eventDate, ticketCount, amount, bookingId, pdfBuffer, pdfUrl, ticketNumber, passType } = data;
       
-      let formattedPhone = phone;
-      if (!formattedPhone.startsWith('+')) {
-        formattedPhone = formattedPhone.startsWith('91') ? `+${formattedPhone}` : `+91${formattedPhone}`;
+      // Enhanced input validation
+      const validationErrors = [];
+      
+      if (!phone || typeof phone !== 'string') {
+        validationErrors.push('Phone number is required and must be a string');
       }
       
-      formattedPhone = formattedPhone.replace(/[^\d+]/g, '');
+      if (!name || typeof name !== 'string') {
+        validationErrors.push('Name is required and must be a string');
+      }
       
-      // Custom message template parameters for Malang Ras Dandiya 2025
-      // Template: Hello {{1}}, Your ticket for Malang Ras Dandiya 2025 has been successfully booked! 🎉
-      // Event Details: Date: {{2}}, Time: {{3}}, Venue: {{4}}, Ticket ID: {{5}}, Pass Type: {{6}}
+      if (!bookingId) {
+        validationErrors.push('Booking ID is required');
+      }
       
-      const formattedEventDate = eventDate 
-        ? new Date(eventDate).toLocaleDateString('en-IN', { 
-            day: 'numeric', 
-            month: 'long', 
-            year: 'numeric' 
-          })
-        : new Date().toLocaleDateString('en-IN', { 
-            day: 'numeric', 
-            month: 'long', 
-            year: 'numeric' 
-          });
-          
+      if (validationErrors.length > 0) {
+        console.error('❌ WhatsApp validation failed:', validationErrors);
+        return { 
+          success: false, 
+          error: 'Validation failed',
+          details: validationErrors,
+          code: 'VALIDATION_ERROR',
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      // Enhanced phone number formatting with validation
+      let formattedPhone = phone.toString().trim();
+      
+      // Remove common phone number formatting
+      formattedPhone = formattedPhone.replace(/[\s\-\(\)\+]/g, '');
+      
+      // Add country code if missing
+      if (!formattedPhone.startsWith('91') && formattedPhone.length === 10) {
+        formattedPhone = '91' + formattedPhone;
+      }
+      
+      // Add + prefix for international format
+      if (!formattedPhone.startsWith('+')) {
+        formattedPhone = '+' + formattedPhone;
+      }
+      
+      // Validate phone number format
+      if (!/^\+91[6-9]\d{9}$/.test(formattedPhone)) {
+        console.warn('⚠️ Invalid phone number format:', phone);
+        return { 
+          success: false, 
+          error: 'Invalid phone number format',
+          code: 'INVALID_PHONE_FORMAT',
+          details: 'Expected format: Indian mobile number (+91XXXXXXXXXX)',
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      console.log(`📱 Sending WhatsApp confirmation to: ${formattedPhone} (Booking: ${bookingId})`);
+      
+      // Enhanced event date formatting with error handling
+      let formattedEventDate;
+      try {
+        formattedEventDate = eventDate 
+          ? new Date(eventDate).toLocaleDateString('en-IN', { 
+              day: 'numeric', 
+              month: 'long', 
+              year: 'numeric' 
+            })
+          : new Date().toLocaleDateString('en-IN', { 
+              day: 'numeric', 
+              month: 'long', 
+              year: 'numeric' 
+            });
+      } catch (dateError) {
+        console.warn('⚠️ Date formatting failed, using fallback:', dateError.message);
+        formattedEventDate = 'TBD';
+      }
+      
       const eventTime = '7:00 PM onwards';
       const venue = 'Regal Lawns, Beed Bypass, Aurangabad';
-      const finalPassType = passType || (ticketNumber && ticketNumber.startsWith('BOOKING-') 
-        ? `${ticketCount} tickets booking` 
-        : `${ticketCount} tickets`);
+      const safeTicketCount = Math.max(1, parseInt(ticketCount) || 1);
+      const finalPassType = passType || `${safeTicketCount} tickets booking`;
+
+      // Custom message template parameters for Malang Ras Dandiya 2025  
+      // Template: Hello {{1}}, Your ticket for Malang Ras Dandiya 2025 has been successfully booked! 🎉
+      // Event Details: Date: {{2}}, Time: {{3}}, Venue: {{4}}, Ticket ID: {{5}}, Pass Type: {{6}}
 
       const payload = {
         apiKey: this.apiKey,
@@ -154,31 +215,74 @@ class WhatsAppService {
       const response = await axios.post(this.apiUrl, payload, {
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'User-Agent': 'Malang-Events-WhatsApp-Service/1.0'
         },
-        timeout: 15000
+        timeout: 30000, // Increased timeout for better reliability
+        maxRetries: 2
       });
 
       console.log('✅ WhatsApp sent successfully:', response.data);
       
       return {
         success: true,
-        messageId: response.data.submitted_message_id || 'sent',
-
+        messageId: response.data.submitted_message_id || response.data.messageId || 'sent',
         service: 'aisensy',
         destination: formattedPhone,
-        response: response.data
+        timestamp: new Date().toISOString(),
+        response: {
+          status: response.status,
+          data: response.data
+        }
       };
 
     } catch (error) {
       console.error('❌ WhatsApp sending failed:');
       console.error('   Error type:', error.name);
       console.error('   Error message:', error.message);
+      
+      let errorCode = 'SEND_FAILED';
+      let errorDetails = {};
+      
       if (error.response) {
         console.error('   Status code:', error.response.status);
         console.error('   Response data:', error.response.data);
-        console.error('   Response headers:', error.response.headers);
+        
+        // Categorize errors based on response status
+        switch (error.response.status) {
+          case 400:
+            errorCode = 'BAD_REQUEST';
+            break;
+          case 401:
+            errorCode = 'UNAUTHORIZED';
+            break;
+          case 403:
+            errorCode = 'FORBIDDEN';
+            break;
+          case 429:
+            errorCode = 'RATE_LIMITED';
+            break;
+          case 500:
+            errorCode = 'SERVER_ERROR';
+            break;
+          default:
+            errorCode = 'HTTP_ERROR';
+        }
+        
+        errorDetails = {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        };
+        
+      } else if (error.code === 'ECONNABORTED') {
+        errorCode = 'TIMEOUT';
+        errorDetails = { timeout: true };
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        errorCode = 'NETWORK_ERROR';
+        errorDetails = { networkError: true, code: error.code };
       }
+      
       if (error.config) {
         console.error('   Request URL:', error.config.url);
         console.error('   Request method:', error.config.method);
@@ -186,7 +290,10 @@ class WhatsAppService {
       
       return {
         success: false,
-        error: error.response?.data?.message || error.message,
+        error: error.response?.data?.message || error.message || 'WhatsApp sending failed',
+        code: errorCode,
+        details: errorDetails,
+        timestamp: new Date().toISOString(),
         errorDetails: {
           type: error.name,
           status: error.response?.status,
