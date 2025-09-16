@@ -37,7 +37,7 @@ class WhatsAppService {
         fs.mkdirSync(ticketsDir, { recursive: true });
       }
       
-      const fileName = `ticket-${bookingId}-${Date.now()}.pdf`;
+      const fileName = `dandiya-tickets-${bookingId}-${Date.now()}.pdf`;
       const filePath = path.join(ticketsDir, fileName);
       
       fs.writeFileSync(filePath, pdfBuffer);
@@ -68,7 +68,7 @@ class WhatsAppService {
     }
 
     try {
-      const { phone, name, eventName, ticketCount, amount, bookingId, pdfBuffer, pdfUrl, ticketNumber } = data;
+      const { phone, name, eventName, eventDate, ticketCount, amount, bookingId, pdfBuffer, pdfUrl, ticketNumber, passType } = data;
       
       let formattedPhone = phone;
       if (!formattedPhone.startsWith('+')) {
@@ -77,9 +77,27 @@ class WhatsAppService {
       
       formattedPhone = formattedPhone.replace(/[^\d+]/g, '');
       
-      // Enhance template parameters to include ticket number for individual tickets
-      const ticketInfo = ticketNumber ? `Ticket #${ticketNumber}` : `${ticketCount} ticket(s)`;
-      const isMultipleTickets = String(ticketCount).includes('/'); // e.g., "1/2", "2/2"
+      // Custom message template parameters for Malang Ras Dandiya 2025
+      // Template: Hello {{1}}, Your ticket for Malang Ras Dandiya 2025 has been successfully booked! 🎉
+      // Event Details: Date: {{2}}, Time: {{3}}, Venue: {{4}}, Ticket ID: {{5}}, Pass Type: {{6}}
+      
+      const formattedEventDate = eventDate 
+        ? new Date(eventDate).toLocaleDateString('en-IN', { 
+            day: 'numeric', 
+            month: 'long', 
+            year: 'numeric' 
+          })
+        : new Date().toLocaleDateString('en-IN', { 
+            day: 'numeric', 
+            month: 'long', 
+            year: 'numeric' 
+          });
+          
+      const eventTime = '7:00 PM onwards';
+      const venue = 'Regal Lawns, Beed Bypass, Aurangabad';
+      const finalPassType = passType || (ticketNumber && ticketNumber.startsWith('BOOKING-') 
+        ? `${ticketCount} tickets booking` 
+        : `${ticketCount} tickets`);
 
       const payload = {
         apiKey: this.apiKey,
@@ -87,12 +105,12 @@ class WhatsAppService {
         destination: formattedPhone,
         userName: name || 'Guest',
         templateParams: [
-          String(name || 'Guest'),
-          String(eventName || 'Dandiya Night'),
-          String(isMultipleTickets ? `Ticket ${ticketCount}` : ticketInfo),
-          String(amount || '₹399'),
-          String(bookingId || 'N/A'),
-          'Regal Lawns, Beed Bypass'
+          String(name || 'Guest'),                    // {{1}} - Guest name
+          String(formattedEventDate),                 // {{2}} - Event date  
+          String(eventTime),                          // {{3}} - Event time
+          String(venue),                              // {{4}} - Venue
+          String(bookingId || 'N/A'),                // {{5}} - Ticket/Booking ID
+          String(finalPassType)                      // {{6}} - Pass type
         ]
       };
 
@@ -101,10 +119,10 @@ class WhatsAppService {
         if (uploadedPdfUrl) {
           payload.media = {
             url: uploadedPdfUrl,
-            filename: `ticket-${bookingId}.pdf`,
+            filename: `dandiya-tickets-${bookingId}.pdf`,
             type: 'document'
           };
-          console.log('📄 Attaching PDF ticket to WhatsApp:', uploadedPdfUrl);
+          console.log('📄 Attaching complete PDF (cover + individual tickets) to WhatsApp:', uploadedPdfUrl);
         } else {
           const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=TICKET-${bookingId}`;
           payload.media = {
@@ -117,10 +135,10 @@ class WhatsAppService {
       } else if (pdfUrl) {
         payload.media = {
           url: pdfUrl,
-          filename: `ticket-${bookingId}.pdf`,
+          filename: `dandiya-tickets-${bookingId}.pdf`,
           type: 'document'
         };
-        console.log('📄 Attaching PDF ticket to WhatsApp:', pdfUrl);
+        console.log('📄 Attaching complete PDF (cover + individual tickets) to WhatsApp:', pdfUrl);
       } else {
         const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=TICKET-${bookingId || 'DEFAULT'}`;
         payload.media = {

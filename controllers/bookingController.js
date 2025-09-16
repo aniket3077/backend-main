@@ -670,47 +670,31 @@ export const testWhatsApp = async (req, res) => {
     const ticketCount = parseInt(numTickets) || 1;
     console.log(`🧪 Testing WhatsApp to: ${phone} with ${ticketCount} tickets`);
     
-    // Send individual messages for each ticket (like the real booking flow)
-    const results = [];
+    // Send single complete booking message (like the real booking flow)
+    const result = await whatsappService.sendBookingConfirmation({
+      phone: phone,
+      name: name,
+      eventName: 'Malang Ras Dandiya 2025',
+      eventDate: new Date().toISOString(), // Use current date for test
+      ticketCount: ticketCount,
+      amount: '₹399',
+      bookingId: `${bookingId}-TEST`,
+      ticketNumber: `BOOKING-${bookingId}-TEST`,
+      passType: 'Test Pass'
+    });
     
-    for (let ticketIndex = 1; ticketIndex <= ticketCount; ticketIndex++) {
-      try {
-        const result = await whatsappService.sendBookingConfirmation({
-          phone: phone,
-          name: name,
-          eventName: 'Malang Ras Dandiya 2025',
-          ticketCount: `${ticketIndex}/${ticketCount}`,
-          amount: '₹399',
-          bookingId: `${bookingId}-${ticketIndex}`,
-          ticketNumber: `TICKET-TEST-${String(ticketIndex).padStart(3, '0')}`
-        });
-        
-        results.push({
-          ticket: ticketIndex,
-          success: result.success,
-          messageId: result.messageId
-        });
-        
-        console.log(`✅ Test ticket ${ticketIndex}/${ticketCount} sent`);
-        
-        // Small delay between messages
-        if (ticketIndex < ticketCount) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
-      } catch (ticketError) {
-        console.error(`❌ Failed test ticket ${ticketIndex}:`, ticketError);
-        results.push({
-          ticket: ticketIndex,
-          success: false,
-          error: ticketError.message
-        });
-      }
-    }
+    console.log(`✅ Test WhatsApp message sent for ${ticketCount} tickets`);
+    
+    const results = [{
+      booking: bookingId,
+      tickets: ticketCount,
+      success: result.success,
+      messageId: result.messageId
+    }];
     
     res.json({ 
       success: true, 
-      message: `Test WhatsApp messages sent to ${phone}`,
+      message: `Test WhatsApp message sent to ${phone}`,
       totalTickets: ticketCount,
       results: results,
       timestamp: new Date().toISOString()
@@ -979,16 +963,29 @@ async function sendTicketNotifications(booking_id, payment_id) {
           };
         });
         
-        // Generate a single PDF containing all tickets
-        const pdfBuffer = await generateMultipleTicketsPDFBuffer(ticketsData);
+        // Generate complete PDF with cover page and all individual tickets
+        const completeBooking = {
+          id: booking.id,
+          name: primaryUser.name,
+          email: primaryUser.email,
+          phone: primaryUser.phone,
+          pass_type: booking.pass_type,
+          date: booking.booking_date,
+          venue: 'Regal Lawns, Beed Bypass',
+          ticket_type: booking.ticket_type || 'single',
+          tickets: ticketsData
+        };
+        
+        const { generateDandiyaTicketPDF } = await import("../utils/pdfGenerator.js");
+        const pdfBuffer = await generateDandiyaTicketPDF(completeBooking);
         
         pdfAttachments.push({
-          filename: `Dandiya_Tickets_${booking.id}_All_${booking.qr_codes.length}_Tickets.pdf`,
+          filename: `Dandiya_Complete_Tickets_${booking.id}_Cover_Plus_${booking.qr_codes.length}_Individual_Tickets.pdf`,
           content: pdfBuffer,
           contentType: 'application/pdf'
         });
         
-        console.log(`📄 Generated single PDF with ${booking.qr_codes.length} tickets successfully`);
+        console.log(`📄 Generated complete PDF (cover page + ${booking.qr_codes.length} individual tickets) successfully`);
       }
     } catch (pdfError) {
       console.error('Error generating PDF:', pdfError);
@@ -1017,12 +1014,12 @@ async function sendTicketNotifications(booking_id, payment_id) {
         
         if (hasOriginalCoupleTickets) {
           const coupleCount = originalPassDetails.couple_conversion?.couple_tickets || 1;
-          emailSubject = `Your Dandiya Night Couple Tickets #${booking.id} (${coupleCount} couple ticket${coupleCount > 1 ? 's' : ''} - ${coupleCount * 2} individual passes)`;
+          emailSubject = `Your Dandiya Night Couple Tickets #${booking.id} (Cover page + ${coupleCount} couple ticket${coupleCount > 1 ? 's' : ''} - ${coupleCount * 2} individual pages)`;
         } else if (hasOriginalFamilyTickets) {
           const familyCount = originalPassDetails.family_conversion?.family_tickets || 1;
-          emailSubject = `Your Dandiya Night Family Tickets #${booking.id} (${familyCount} family ticket${familyCount > 1 ? 's' : ''} - ${familyCount * 4} individual passes)`;
+          emailSubject = `Your Dandiya Night Family Tickets #${booking.id} (Cover page + ${familyCount} family ticket${familyCount > 1 ? 's' : ''} - ${familyCount * 4} individual pages)`;
         } else {
-          emailSubject = `Your Dandiya Night Tickets #${booking.id} (${booking.num_tickets} tickets)`;
+          emailSubject = `Your Dandiya Night Tickets #${booking.id} (Cover page + ${booking.num_tickets} individual tickets)`;
         }
         
         const emailData = {
@@ -1047,7 +1044,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
         
         // Log success with frontend-like details
         const attachmentDescription = pdfAttachments.length > 0 
-          ? `with 1 PDF containing all ${booking.num_tickets} tickets`
+          ? `with 1 complete PDF containing cover page + ${booking.num_tickets} individual full-page tickets`
           : 'without PDF attachment (generation failed)';
         console.log(`📧 Email notification sent successfully!`);
         console.log(`📧 Recipient: ${primaryUser.email}`);
@@ -1071,59 +1068,66 @@ async function sendTicketNotifications(booking_id, payment_id) {
       try {
         const phoneNumber = primaryUser.phone.replace(/^\+?91|\s+/g, '');
         
-        console.log(`📱 Preparing to send ${booking.num_tickets} WhatsApp messages for booking ${booking.id}`);
+        console.log(`📱 Preparing to send complete PDF with cover page + ${booking.num_tickets} individual tickets for booking ${booking.id}`);
 
-        // Send individual WhatsApp message for each ticket
-        for (let ticketIndex = 1; ticketIndex <= booking.num_tickets; ticketIndex++) {
-          try {
-            // Generate PDF for each individual ticket
-            let pdfBuffer = null;
-            try {
-              const { generateTicketPDFBuffer } = await import("../utils/pdfGenerator.js");
-              const ticketData = {
-                name: primaryUser.name,
-                date: booking.booking_date,
-                pass_type: booking.pass_type,
-                qrCode: booking.qr_code,
-                booking_id: booking.id,
-                ticket_number: `TICKET-${booking.id}-${String(ticketIndex).padStart(3, '0')}`,
-                ticket_index: ticketIndex,
-                total_tickets: booking.num_tickets
-              };
-              pdfBuffer = await generateTicketPDFBuffer(ticketData);
-              console.log(`📄 Generated PDF for ticket ${ticketIndex}/${booking.num_tickets}:`, pdfBuffer ? `${pdfBuffer.length} bytes` : 'failed');
-            } catch (pdfError) {
-              console.error(`❌ PDF generation failed for ticket ${ticketIndex}:`, pdfError);
-            }
-
-            // Send WhatsApp message for this specific ticket
-            const whatsappResult = await whatsappService.sendBookingConfirmation({
-              phone: phoneNumber,
+        // Generate complete PDF with cover page and all individual tickets
+        let completePdfBuffer = null;
+        try {
+          const { generateDandiyaTicketPDF } = await import("../utils/pdfGenerator.js");
+          
+          // Prepare tickets data for complete PDF generation
+          const ticketsData = [];
+          for (let ticketIndex = 1; ticketIndex <= booking.num_tickets; ticketIndex++) {
+            ticketsData.push({
               name: primaryUser.name,
-              eventName: 'Dandiya Night',
-              ticketCount: `${ticketIndex}/${booking.num_tickets}`, // Show "1/2", "2/2" etc.
-              amount: `₹${payment?.amount || booking.final_amount || 0}`,
-              bookingId: `${booking.id}-${ticketIndex}`,
-              pdfBuffer: pdfBuffer,
-              ticketNumber: `TICKET-${booking.id}-${String(ticketIndex).padStart(3, '0')}`
+              date: booking.booking_date,
+              pass_type: booking.pass_type,
+              ticket_type: booking.ticket_type || 'single',
+              qrCode: booking.qr_code,
+              booking_id: booking.id,
+              ticket_number: `TICKET-${booking.id}-${String(ticketIndex).padStart(3, '0')}`,
+              venue: 'Regal Lawns, Beed Bypass'
             });
-
-            console.log(`💬 WhatsApp ticket ${ticketIndex}/${booking.num_tickets} sent to:`, phoneNumber);
-            
-            // Small delay between messages to avoid rate limiting
-            if (ticketIndex < booking.num_tickets) {
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-            }
-            
-          } catch (ticketError) {
-            console.error(`❌ Failed to send WhatsApp for ticket ${ticketIndex}:`, ticketError);
-            // Continue with next ticket even if one fails
           }
+
+          // Create booking object for complete PDF generation
+          const completeBooking = {
+            id: booking.id,
+            name: primaryUser.name,
+            email: primaryUser.email,
+            phone: primaryUser.phone,
+            pass_type: booking.pass_type,
+            date: booking.booking_date,
+            venue: 'Regal Lawns, Beed Bypass',
+            ticket_type: booking.ticket_type || 'single',
+            tickets: ticketsData
+          };
+
+          completePdfBuffer = await generateDandiyaTicketPDF(completeBooking);
+          console.log(`📄 Generated complete PDF (cover page + ${booking.num_tickets} tickets):`, completePdfBuffer ? `${completePdfBuffer.length} bytes` : 'failed');
+        } catch (pdfError) {
+          console.error(`❌ Complete PDF generation failed:`, pdfError);
         }
 
-        console.log(`✅ All ${booking.num_tickets} WhatsApp ticket messages sent to:`, phoneNumber);
+        // Send single WhatsApp message with complete PDF
+        const whatsappResult = await whatsappService.sendBookingConfirmation({
+          phone: phoneNumber,
+          name: primaryUser.name,
+          eventName: 'Malang Ras Dandiya 2025',
+          eventDate: booking.booking_date, // Pass actual booking date
+          ticketCount: booking.num_tickets,
+          amount: `₹${payment?.amount || booking.final_amount || 0}`,
+          bookingId: booking.id,
+          pdfBuffer: completePdfBuffer,
+          ticketNumber: `BOOKING-${booking.id}`,
+          passType: booking.pass_type
+        });
+
+        console.log(`💬 WhatsApp complete PDF sent to:`, phoneNumber);
+        console.log(`📋 PDF contains: Cover page + ${booking.num_tickets} individual full-page tickets`);
+        
       } catch (whatsappError) {
-        console.error('Failed to send WhatsApp messages:', whatsappError);
+        console.error('Failed to send WhatsApp message:', whatsappError);
       }
     }
 
