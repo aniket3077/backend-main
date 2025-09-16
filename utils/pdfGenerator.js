@@ -155,6 +155,7 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
           name: safeName,
           date: safeDate,
           pass_type: safePassType,
+          ticket_type: ticket_type || 'single',
           qrCode,
           booking_id,
           ticket_number,
@@ -194,6 +195,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
           name: ticketData.name || "Guest",
           date: ticketData.date || new Date().toISOString(),
           pass_type: ticketData.pass_type || "Standard Pass",
+          ticket_type: ticketData.ticket_type || 'single',
           qrCode: ticketData.qrCode,
           booking_id: ticketData.booking_id,
           ticket_number: ticketData.ticket_number,
@@ -211,12 +213,13 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
 
 // Helper function to generate a single ticket page
 async function generateSingleTicketPage(doc, ticketData) {
-  const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, passTypeColors } = ticketData;
+  const { name, date, pass_type, ticket_type, qrCode, booking_id, ticket_number, venue, passTypeColors } = ticketData;
   
   try {
     const safeName = name || "Guest";
     const safeDate = date || new Date().toISOString();
     const safePassType = pass_type || "Standard Pass";
+    const safeTicketType = ticket_type || "single";
     const safeVenue = venue || "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
 
     // Background - Rich gradient effect
@@ -283,9 +286,11 @@ async function generateSingleTicketPage(doc, ticketData) {
                align: 'center'
              });
              
+          // Show different text for season pass vs single day
+          const headerText = (safeTicketType === 'season') ? 'Official Season Pass (8 Days)' : 'Official Entry Pass';
           doc.fontSize(10)
              .fillColor('#ffffff')
-             .text('Official Entry Pass', 110, yPos + 50, {
+             .text(headerText, 110, yPos + 50, {
                width: 270,
                align: 'center'
              });
@@ -302,9 +307,11 @@ async function generateSingleTicketPage(doc, ticketData) {
                width: 350
              });
           
+          // Show different text for season pass vs single day
+          const fallbackHeaderText = (safeTicketType === 'season') ? ' Official Season Pass (8 Days) ' : ' Official Entry Pass ';
           doc.fontSize(12)
              .fillColor('#ffd700')
-             .text(' Official Entry Pass ', 35, yPos + 45, {
+             .text(fallbackHeaderText, 35, yPos + 45, {
                align: 'center',
                width: 350
              });
@@ -356,11 +363,29 @@ async function generateSingleTicketPage(doc, ticketData) {
            .font('Helvetica-Bold')
            .text('PASS TYPE', 45, yPos);
         
-        // Pass type name with color
-        doc.font('Helvetica-Bold')
-           .fontSize(14)
-           .fillColor(passTypeColors.primary)
-           .text(safePassType.toUpperCase(), 45, yPos + 15);
+        // Pass type name with color - Enhanced for Season Pass
+        const isSeasonPass = safeTicketType === 'season';
+        let passTypeDisplay = safePassType.toUpperCase();
+        
+        if (isSeasonPass) {
+          // For season pass, show both the pass type and "SEASON PASS"
+          doc.font('Helvetica-Bold')
+             .fontSize(12)
+             .fillColor(passTypeColors.primary)
+             .text(`${passTypeDisplay} - SEASON PASS`, 45, yPos + 15);
+          
+          // Add "8 DAYS" subtitle for season pass
+          doc.font('Helvetica')
+             .fontSize(10)
+             .fillColor('#666666')
+             .text('(8 Days Access)', 45, yPos + 30);
+        } else {
+          // For single day tickets
+          doc.font('Helvetica-Bold')
+             .fontSize(14)
+             .fillColor(passTypeColors.primary)
+             .text(passTypeDisplay, 45, yPos + 15);
+        }
         
         // Color indicator badge - Made smaller
         doc.rect(250, yPos + 8, 90, 20)
@@ -704,16 +729,17 @@ export const generateMultipleTicketsPDFBuffer = async (ticketsData) => {
 
 // Helper function to generate a single ticket on a specific page
 const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTickets) => {
-  const { name, date, pass_type, qrCode, booking_id, ticket_number, venue } = ticketData || {};
+  const { name, date, pass_type, ticket_type, qrCode, booking_id, ticket_number, venue } = ticketData || {};
 
   // Safe defaults
   const safeName = (name ?? "Guest").toString();
   const safePassType = (pass_type ?? "Standard Pass").toString();
+  const safeTicketType = ticket_type ?? "single";
   const safeDate = date ?? new Date().toISOString();
   const safeVenue = venue ?? "Event Ground, Malang";
 
   // Use centralized color mapping
-  const passTypeColors = getTicketColors(safePassType, ticketData.ticket_type);
+  const passTypeColors = getTicketColors(safePassType, safeTicketType);
 
   // Background
   doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
@@ -849,11 +875,29 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
      .font('Helvetica-Bold')
      .text('PASS TYPE', 55, yPos);
   
-  // Pass type name with color
-  doc.font('Helvetica-Bold')
-     .fontSize(16)
-     .fillColor(passTypeColors.primary)
-     .text(safePassType.toUpperCase(), 55, yPos + 18);
+  // Pass type name with color - Enhanced for Season Pass
+  const isSeasonPass = safeTicketType === 'season';
+  let passTypeDisplay = safePassType.toUpperCase();
+  
+  if (isSeasonPass) {
+    // For season pass, show both the pass type and "SEASON PASS"
+    doc.font('Helvetica-Bold')
+       .fontSize(14)
+       .fillColor(passTypeColors.primary)
+       .text(`${passTypeDisplay} - SEASON PASS`, 55, yPos + 18);
+    
+    // Add "8 DAYS" subtitle for season pass
+    doc.font('Helvetica')
+       .fontSize(12)
+       .fillColor('#666666')
+       .text('(8 Days Access)', 55, yPos + 36);
+  } else {
+    // For single day tickets
+    doc.font('Helvetica-Bold')
+       .fontSize(16)
+       .fillColor(passTypeColors.primary)
+       .text(passTypeDisplay, 55, yPos + 18);
+  }
   
   // Color indicator badge
   doc.rect(250, yPos + 10, 100, 25)

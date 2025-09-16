@@ -14,22 +14,22 @@ dotenv.config();
  * Supports season pass, bulk discounts, and new pricing structure
  */
 
-// Updated pricing structure for Malang Raas Dandiya 2025
+// Updated pricing structure for Malang Raas Dandiya 2025 - Exact format matching UI
 const TICKET_PRICING = {
   // Single Day Tickets
   single: {
     female: { base: 399, bulk_threshold: 6, bulk_price: 300 },
-    male: { base: 399, bulk_threshold: 6, bulk_price: 300 },
-    couple: { base: 699, bulk_threshold: 6, bulk_price: 300 },
-    family: { base: 1300, bulk_threshold: 6, bulk_price: 300 },
-    group: { base: 1999, bulk_threshold: 6, bulk_price: 300 },
-    kids: { base: 99, bulk_threshold: 6, bulk_price: 300 },
-    kid: { base: 99, bulk_threshold: 6, bulk_price: 300 }, // Backward compatibility
-    family4: { base: 1300, bulk_threshold: 6, bulk_price: 300 } // Backward compatibility
+    male: { base: 499, bulk_threshold: 6, bulk_price: 400 },
+    couple: { base: 799, bulk_threshold: 6, bulk_price: 600 },
+    family: { base: 1499, bulk_threshold: 6, bulk_price: 1200 },
+    group: { base: 1999, bulk_threshold: 6, bulk_price: 1600 },
+    kids: { base: 99, bulk_threshold: 6, bulk_price: 80 },
+    kid: { base: 99, bulk_threshold: 6, bulk_price: 80 }, // Backward compatibility
+    family4: { base: 1499, bulk_threshold: 6, bulk_price: 1200 } // Backward compatibility
   },
   // Season Pass Tickets (8 Days)
   season: {
-    female: { base: 2499 },
+    female: { base: 1999 },
     male: { base: 2499 },
     couple: { base: 3499 },
     family: { base: 5999 },
@@ -93,18 +93,18 @@ try {
   razorpay = null;
 }
 
-// Helper: compute total amount based on pass_type and quantity
+// Helper: compute total amount based on pass_type and quantity - Updated pricing
 function computeTotalAmount(passType, quantity = 1) {
   const priceMap = {
     female: 399,
-    male: 399,
-    couple: 699,
-    family: 1300,
-    family4: 1300, // Keep for backward compatibility
+    male: 499,
+    couple: 799,
+    family: 1499,
+    family4: 1499, // Keep for backward compatibility
     group: 1999,
     kids: 99,
     kid: 99, // Keep for backward compatibility
-    season_female: 2499,
+    season_female: 1999,
     season_male: 2499,
     season_couple: 3499,
     season_family: 5999,
