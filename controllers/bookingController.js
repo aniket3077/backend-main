@@ -11,10 +11,10 @@ dotenv.config();
 
 /**
  * Malang Raas Dandiya 2025 - Updated Booking Controller
- * Supports season pass, bulk discounts, and new pricing structure
+ * Supports season pass, bulk discounts (6+ tickets = ₹350 each), and new pricing structure
  */
 
-// 🎉 Updated pricing structure for Malang Raas Dandiya 2025 - Simple Fixed Pricing
+// 🎉 Updated pricing structure for Malang Raas Dandiya 2025 - With Bulk Discount
 const TICKET_PRICING = {
   // 🎟 Single Day Entry Tickets
   single: {
@@ -38,7 +38,7 @@ const TICKET_PRICING = {
   }
 };
 
-// Calculate ticket price with simple fixed pricing (no bulk discounts)
+// Calculate ticket price with bulk discount (6+ tickets = ₹350 each)
 function calculateTicketPrice(passType, ticketType, numTickets) {
   const pricing = TICKET_PRICING[ticketType]?.[passType];
   if (!pricing) {
@@ -46,16 +46,30 @@ function calculateTicketPrice(passType, ticketType, numTickets) {
   }
 
   const quantity = Math.max(1, parseInt(numTickets));
+  const basePrice = pricing.base;
   
-  // Simple fixed pricing - no bulk discounts
+  // 🎯 Bulk discount: 6+ tickets = ₹350 each
+  let finalPricePerTicket = basePrice;
+  let discountApplied = false;
+  let discountAmount = 0;
+  
+  if (quantity >= 6) {
+    finalPricePerTicket = 350;
+    discountApplied = true;
+    discountAmount = (basePrice - 350) * quantity;
+  }
+  
+  const totalAmount = finalPricePerTicket * quantity;
+  const savings = discountApplied ? discountAmount : 0;
+  
   return {
-    basePrice: pricing.base,
-    finalPrice: pricing.base,
-    pricePerTicket: pricing.base, // Per ticket price
-    discountApplied: false,
-    totalAmount: pricing.base * quantity,
-    savings: 0,
-    discountAmount: 0
+    basePrice: basePrice,
+    finalPrice: finalPricePerTicket,
+    pricePerTicket: finalPricePerTicket,
+    discountApplied: discountApplied,
+    totalAmount: totalAmount,
+    savings: savings,
+    discountAmount: discountAmount
   };
 }
 
@@ -208,7 +222,26 @@ export const createBooking = async (req, res) => {
     });
   }
 
-  // 🎟️ NEW TICKET PURCHASE VALIDATION RULES
+  // � AUTO-DETECT SEASON PASS BASED ON DATE
+  // Season dates: September 23, 2025 to October 1, 2025 (8 days)
+  const seasonStart = new Date('2025-09-23');
+  const seasonEnd = new Date('2025-10-01');
+  
+  // Check if booking date falls within season period
+  const isSeasonDate = parsedDate >= seasonStart && parsedDate <= seasonEnd;
+  
+  // Auto-convert to season pass if date is within season period - DISABLED
+  let finalTicketType = ticket_type; // Respect user's explicit choice
+  // Commented out auto-conversion to respect user choice
+  // if (isSeasonDate && ticket_type === 'single') {
+  //   finalTicketType = 'season';
+  //   console.log(`🎟️ AUTO-DETECTED: Converting single ticket to season pass for date ${booking_date}`);
+  //   console.log(`📅 Season period: ${seasonStart.toDateString()} to ${seasonEnd.toDateString()}`);
+  // }
+
+  console.log(`🎯 Final ticket type: ${finalTicketType} (respecting user choice - no auto-conversion)`);
+
+  // �🎟️ NEW TICKET PURCHASE VALIDATION RULES
   // Check if male or kid tickets are being purchased alone (not allowed)
   if (passes && typeof passes === 'object') {
     // New format: multiple pass types
@@ -259,6 +292,22 @@ export const createBooking = async (req, res) => {
     console.log('  Ticket type:', ticket_type);
     console.log('  Final ticket count:', finalTicketCount);
     
+    // 🔍 ADDITIONAL MULTI-PASS DEBUGGING
+    console.log('📋 MULTI-PASS ANALYSIS:');
+    if (passes && typeof passes === 'object') {
+      const passEntries = Object.entries(passes);
+      const activePassTypes = passEntries.filter(([key, count]) => (Number(count) || 0) > 0);
+      console.log('  - Pass entries:', passEntries);
+      console.log('  - Active pass types:', activePassTypes);
+      console.log('  - Is multi-pass?', activePassTypes.length > 1);
+      
+      activePassTypes.forEach(([passType, count]) => {
+        console.log(`  - ${passType}: ${count} tickets`);
+      });
+    } else {
+      console.log('  - No passes object, using legacy pass_type:', pass_type);
+    }
+    
     // �💰 Enhanced pricing calculation with validation
     let priceInfo;
     let totalAmount = 0;
@@ -272,12 +321,38 @@ export const createBooking = async (req, res) => {
         // Multi-pass booking: calculate total for all pass types
         console.log('🎟️ Multi-pass booking detected, calculating total for all pass types:', passes);
         
+        // 🎯 Check total tickets for bulk discount eligibility (6+ tickets = ₹350 each)
+        const isBulkDiscount = totalTickets >= 6;
+        console.log(`🧮 Total tickets: ${totalTickets}, Bulk discount eligible: ${isBulkDiscount}`);
+        
         let passDetailsArray = [];
         Object.entries(passes).forEach(([passType, count]) => {
           const passCount = Number(count) || 0;
           if (passCount <= 0) return;
           
-          const passCalc = calculateTicketPrice(passType, ticket_type, passCount);
+          let passCalc;
+          if (isBulkDiscount) {
+            // Apply bulk discount: ₹350 per ticket regardless of pass type
+            const pricing = TICKET_PRICING[finalTicketType]?.[passType];
+            const basePrice = pricing ? pricing.base : 0;
+            
+            passCalc = {
+              basePrice: basePrice,
+              finalPrice: 350,
+              pricePerTicket: 350,
+              discountApplied: true,
+              totalAmount: 350 * passCount,
+              savings: (basePrice - 350) * passCount,
+              discountAmount: (basePrice - 350) * passCount
+            };
+            
+            console.log(`   ${passType}: ₹350 × ${passCount} = ₹${passCalc.totalAmount} (Bulk discount applied, saved ₹${passCalc.discountAmount})`);
+          } else {
+            // Normal pricing
+            passCalc = calculateTicketPrice(passType, finalTicketType, passCount);
+            console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
+          }
+          
           if (passCalc && typeof passCalc.totalAmount === 'number') {
             totalAmount += passCalc.totalAmount;
             totalDiscount += passCalc.discountAmount || 0;
@@ -287,17 +362,17 @@ export const createBooking = async (req, res) => {
               passType,
               count: passCount,
               unitPrice: passCalc.pricePerTicket,
-              subtotal: passCalc.totalAmount
+              subtotal: passCalc.totalAmount,
+              discountApplied: passCalc.discountApplied,
+              savings: passCalc.savings || 0
             });
-            
-            console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
           }
         });
         
         // Calculate average price per ticket for display
         pricePerTicket = totalAmount / finalTicketCount;
         
-        console.log(`🧮 Multi-pass total: ₹${totalAmount} (${passDetailsArray.length} pass types)`);
+        console.log(`🧮 Multi-pass total: ₹${totalAmount} (${passDetailsArray.length} pass types, bulk discount: ${isBulkDiscount})`);
         
         // Create priceInfo object for compatibility
         priceInfo = {
@@ -307,12 +382,13 @@ export const createBooking = async (req, res) => {
           discountAmount: totalDiscount,
           basePrice: pricePerTicket, // Average for multi-pass
           finalPrice: pricePerTicket,
-          passDetails: passDetailsArray
+          passDetails: passDetailsArray,
+          bulkDiscount: isBulkDiscount
         };
         
       } else {
         // Single pass type booking (legacy path)
-        priceInfo = calculateTicketPrice(pass_type, ticket_type, finalTicketCount);
+        priceInfo = calculateTicketPrice(pass_type, finalTicketType, finalTicketCount);
         
         // Validate pricing calculation result
         if (!priceInfo || typeof priceInfo.totalAmount !== 'number') {
@@ -352,7 +428,7 @@ export const createBooking = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "Pricing calculation error",
-        message: `Failed to calculate pricing for ${pass_type} ${ticket_type}: ${pricingError.message}`
+        message: `Failed to calculate pricing for ${pass_type} ${finalTicketType}: ${pricingError.message}`
       });
     }
     
@@ -364,7 +440,7 @@ export const createBooking = async (req, res) => {
         { totalAmount }, 
         pass_type, 
         finalTicketCount, 
-        ticket_type
+        finalTicketType
       );
       
       if (!validationResult.isValid) {
@@ -453,12 +529,12 @@ export const createBooking = async (req, res) => {
       parseInt(finalTicketCount), 
       pass_type, 
 
-      ticket_type,
+      finalTicketType,
       'pending', 
       totalAmount, 
       totalDiscount, 
       totalAmount,
-      ticket_type === 'season',
+      finalTicketType === 'season',
       discountApplied,
       totalAmount + totalDiscount,
       totalAmount,
@@ -1179,15 +1255,82 @@ export const confirmPayment = async (req, res) => {
     // Generate QR codes for each ticket
     const qrCodes = [];
     if (booking.users && booking.users.length > 0) {
+      // 🎯 Extract individual pass types for multi-pass bookings
+      let individualPassTypes = [];
+      
+      try {
+        const passDetails = JSON.parse(booking.pass_details || '{}');
+        const originalPasses = passDetails.original_passes || passDetails.passes || {};
+        const expandedPasses = passDetails.passes || {}; // This contains the expanded counts
+        
+        console.log('🔍 Pass details for QR generation:', {
+          original: originalPasses,
+          expanded: expandedPasses,
+          num_tickets: booking.num_tickets
+        });
+        
+        // Build array of individual pass types based on expanded passes (not original)
+        // This handles couple/family ticket expansion properly
+        for (const [passType, count] of Object.entries(expandedPasses)) {
+          for (let j = 0; j < (Number(count) || 0); j++) {
+            individualPassTypes.push(passType);
+          }
+        }
+        
+        // If we don't have enough individual pass types, fall back to original passes logic
+        if (individualPassTypes.length < booking.num_tickets) {
+          console.log('⚠️ Not enough expanded pass types, using original passes with couple/family expansion');
+          individualPassTypes = [];
+          
+          for (const [passType, count] of Object.entries(originalPasses)) {
+            const passCount = Number(count) || 0;
+            
+            if (passType === 'couple') {
+              // Each couple ticket generates 1 male + 1 female ticket
+              for (let j = 0; j < passCount; j++) {
+                individualPassTypes.push('male');
+                individualPassTypes.push('female');
+              }
+            } else if (passType === 'family' || passType === 'family4') {
+              // Each family ticket generates 2 male + 2 female tickets
+              for (let j = 0; j < passCount; j++) {
+                individualPassTypes.push('male');
+                individualPassTypes.push('female');
+                individualPassTypes.push('male');
+                individualPassTypes.push('female');
+              }
+            } else {
+              // Regular tickets (male, female, kids, etc.)
+              for (let j = 0; j < passCount; j++) {
+                individualPassTypes.push(passType);
+              }
+            }
+          }
+        }
+        
+        console.log('🎟️ Individual pass types for QR generation:', individualPassTypes);
+        console.log(`🔢 Expected tickets: ${booking.num_tickets}, Generated pass types: ${individualPassTypes.length}`);
+        
+      } catch (error) {
+        console.error('Error parsing pass details:', error);
+        // Fallback: use booking pass type for all tickets
+        for (let j = 0; j < booking.num_tickets; j++) {
+          individualPassTypes.push(booking.pass_type);
+        }
+      }
+
       for (let i = 0; i < booking.num_tickets; i++) {
         const ticketNumber = uuidv4();
+        
+        // Use individual pass type for each ticket
+        const ticketPassType = individualPassTypes[i] || booking.pass_type;
         
         let qrCodeUrl;
         try {
           const qrData = {
             ticketNumber,
             bookingId: booking.id.toString(),
-            passType: booking.pass_type,
+            passType: ticketPassType, // Use individual pass type
             eventDate: booking.booking_date.toISOString()
           };
           qrCodeUrl = await generateQRCode(JSON.stringify(qrData));
@@ -1204,7 +1347,7 @@ export const confirmPayment = async (req, res) => {
           booking.id, 
           booking.users[0]?.id, 
           ticketNumber, 
-          JSON.stringify({ ticketNumber, bookingId: booking.id.toString(), passType: booking.pass_type, eventDate: booking.booking_date.toISOString() }),
+          JSON.stringify({ ticketNumber, bookingId: booking.id.toString(), passType: ticketPassType, eventDate: booking.booking_date.toISOString() }),
           qrCodeUrl, 
           new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
           false
@@ -1294,11 +1437,42 @@ async function sendTicketNotifications(booking_id, payment_id) {
         const ticketsData = booking.qr_codes.map((qrCodeData, i) => {
           const ticketUserName = booking.users[i]?.name || primaryUser.name;
           
+          // 🎯 ENHANCED: Extract pass type from QR code data for accurate individual tickets
+          let individualPassType = booking.pass_type;
+          let originalPassType = booking.pass_type;
+          
+          try {
+            // Parse QR data to get the actual pass type for this ticket
+            const qrData = JSON.parse(qrCodeData.qr_data || '{}');
+            if (qrData.passType) {
+              individualPassType = qrData.passType;
+              
+              // For couple/family passes, keep the original pass type for colors
+              if (booking.pass_type === 'couple' || booking.pass_type === 'family') {
+                originalPassType = booking.pass_type;
+              } else {
+                // For multi-pass bookings, each ticket has its own color
+                originalPassType = individualPassType;
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing QR data:', error);
+            // Fallback to original logic for couple/family
+            if (booking.pass_type === 'couple') {
+              individualPassType = (i % 2 === 0) ? 'female' : 'male';
+              originalPassType = 'couple';
+            } else if (booking.pass_type === 'family') {
+              individualPassType = (i < 2) ? 'female' : 'male';
+              originalPassType = 'family';
+            }
+          }
+          
           return {
             name: ticketUserName,
             date: booking.booking_date,
-            pass_type: booking.pass_type,
-            ticket_type: booking.ticket_type || 'single', // Add ticket type for rainbow design
+            pass_type: individualPassType, // Individual pass type for ticket content
+            original_pass_type: originalPassType, // Original or individual pass type for color scheme
+            ticket_type: booking.ticket_type || 'single',
             qrCode: qrCodeData.qr_code_url,
             booking_id: booking.id.toString(),
             ticket_number: qrCodeData.ticket_number,
@@ -1468,9 +1642,32 @@ async function sendTicketNotifications(booking_id, payment_id) {
 
         console.log(`💬 WhatsApp complete PDF sent to:`, phoneNumber);
         console.log(`📋 PDF contains: Cover page + ${booking.num_tickets} individual full-page tickets`);
+        console.log(`📋 WhatsApp result:`, whatsappResult?.success ? 'Success' : 'Failed');
         
       } catch (whatsappError) {
-        console.error('Failed to send WhatsApp message:', whatsappError);
+        console.error('❌ WhatsApp PDF send failed:', whatsappError);
+        
+        // Try sending WhatsApp without PDF as fallback
+        try {
+          console.log('📱 Retrying WhatsApp without PDF...');
+          
+          const fallbackResult = await whatsappService.sendBookingConfirmation({
+            phone: phoneNumber,
+            name: primaryUser.name,
+            eventName: 'Malang Ras Dandiya 2025',
+            eventDate: booking.booking_date,
+            ticketCount: booking.num_tickets,
+            amount: `₹${payment?.amount || booking.final_amount || 0}`,
+            bookingId: booking.id,
+            pdfBuffer: null, // No PDF
+            ticketNumber: `BOOKING-${booking.id}`,
+            passType: booking.pass_type
+          });
+          
+          console.log('✅ WhatsApp fallback message sent successfully');
+        } catch (fallbackError) {
+          console.error('❌ WhatsApp fallback also failed:', fallbackError);
+        }
       }
     }
 

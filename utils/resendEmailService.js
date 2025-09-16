@@ -33,7 +33,7 @@ function isResendConfigured() {
   return resend !== null;
 }
 
-async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
+async function sendTicketEmail(toEmail, subject, userName, attachments = [], additionalData = {}) {
   // Production mode - Resend must be configured
   if (!resend) {
     const error = new Error('Email service not available - Resend API key not configured properly');
@@ -89,7 +89,7 @@ async function sendTicketEmail(toEmail, subject, userName, attachments = []) {
               <p><strong>Time:</strong> 7:00 PM onwards</p>
             </div>
             
-            <p>🎫 Your e-ticket${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 's are' : ' is'} attached to this email as a single PDF file. Please present the QR code${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 's' : ''} at the entrance for quick entry.</p>
+            <p>🎫 Your e-ticket${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 's are' : ' is'} ${attachments && attachments.length > 0 ? 'attached to this email as a PDF file' : 'being processed'}. ${additionalData.downloadUrl ? `You can also download them from: <a href="${additionalData.downloadUrl}" style="color: #d4af37; text-decoration: none;">Download Tickets PDF</a>` : 'Please present the QR code at the entrance for quick entry.'}</p>
             
             ${attachments && attachments.length === 1 && attachments[0].filename.includes('All_') ? 
               `<p><strong>📋 Your booking contains multiple tickets in one PDF:</strong></p>

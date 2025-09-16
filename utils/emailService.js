@@ -1,7 +1,7 @@
 import { sendTicketEmail as sendResend, isResendConfigured } from './resendEmailService.js';
 
 // Frontend-like email service with better error handling and user feedback
-export async function sendTicketEmail(toEmail, subject, userName, attachments) {
+export async function sendTicketEmail(toEmail, subject, userName, attachments, additionalData = {}) {
   // Input validation with user-friendly messages
   const validationResult = validateEmailInputs(toEmail, subject, userName);
   if (!validationResult.isValid) {
@@ -15,6 +15,30 @@ export async function sendTicketEmail(toEmail, subject, userName, attachments) {
   console.log(`📧 Subject: ${subject}`);
   console.log(`📧 Attachments: ${attachments ? attachments.length : 0}`);
   
+  // Check attachment sizes
+  if (attachments && attachments.length > 0) {
+    const maxAttachmentSize = 25 * 1024 * 1024; // 25MB total limit for Resend
+    let totalSize = 0;
+    
+    for (const attachment of attachments) {
+      if (attachment.content) {
+        totalSize += attachment.content.length;
+      }
+    }
+    
+    console.log(`📧 Total attachment size: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
+    
+    if (totalSize > maxAttachmentSize) {
+      console.warn(`⚠️ Attachments too large for email (${totalSize} bytes), sending without attachments`);
+      attachments = null;
+      
+      // Add download link message if available
+      if (additionalData.downloadUrl) {
+        subject += ' - Download Link Included';
+      }
+    }
+  }
+  
   // Check service availability
   if (!isResendConfigured()) {
     const error = new Error('Email service is temporarily unavailable. Please try again later.');
@@ -26,7 +50,7 @@ export async function sendTicketEmail(toEmail, subject, userName, attachments) {
 
   try {
     // Add retry mechanism (frontend-like approach)
-    const result = await retryEmailSend(sendResend, toEmail, subject, userName, attachments);
+    const result = await retryEmailSend(sendResend, toEmail, subject, userName, attachments, additionalData);
     
     console.log('✅ Production email sent successfully to:', toEmail);
     
@@ -109,13 +133,13 @@ function validateEmailInputs(toEmail, subject, userName) {
 }
 
 // Retry mechanism (frontend-like approach for reliability)
-async function retryEmailSend(sendFunction, toEmail, subject, userName, attachments, maxRetries = 3) {
+async function retryEmailSend(sendFunction, toEmail, subject, userName, attachments, additionalData = {}, maxRetries = 3) {
   let lastError;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`📧 Email attempt ${attempt}/${maxRetries}`);
-      return await sendFunction(toEmail, subject, userName, attachments);
+      return await sendFunction(toEmail, subject, userName, attachments, additionalData);
     } catch (error) {
       lastError = error;
       

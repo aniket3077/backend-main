@@ -2,7 +2,28 @@ import PDFDocument from "pdfkit";
 import fs from "fs";
 import path from "path";
 import axios from "axios";
-import { generateQRCodeBuffer } from "./qrGenerator.js";
+import QRCode from "qrcode";
+
+// Import the QR generator function
+async function generateQRCodeBuffer(text) {
+  try {
+    const qrBuffer = await QRCode.toBuffer(text, {
+      errorCorrectionLevel: 'M',
+      type: 'png',
+      quality: 0.92,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      },
+      width: 256
+    });
+    return qrBuffer;
+  } catch (error) {
+    console.error('❌ Error generating QR code buffer:', error);
+    throw new Error(`Failed to generate QR code: ${error.message}`);
+  }
+}
 
 /**
  * 🎟️ OFFICIAL TICKET COLOR RULES - Master Implementation
@@ -21,12 +42,14 @@ import { generateQRCodeBuffer } from "./qrGenerator.js";
  */
 
 // 🌈 Centralized Color Mapping Function
-const getTicketColors = (passType, ticketType = 'single') => {
+const getTicketColors = (passType, ticketType = 'single', originalPassType = null) => {
+  // Use original pass type for color determination if provided (for couple/family individual tickets)
+  const colorPassType = (originalPassType || passType || '').toString().toLowerCase();
   const type = (passType || '').toString().toLowerCase();
   const isSeasonPass = ticketType === 'season';
   
   // Season Pass tickets get rainbow design
-  if (isSeasonPass && (type === 'female' || type === 'family' || type === 'family4' || type === 'couple')) {
+  if (isSeasonPass && (colorPassType === 'female' || colorPassType === 'family' || colorPassType === 'family4' || colorPassType === 'couple')) {
     return { 
       primary: '#FF0000', 
       secondary: '#FF7F00', 
@@ -37,17 +60,17 @@ const getTicketColors = (passType, ticketType = 'single') => {
     };
   }
   
-  // Standard single day tickets
-  switch (type) {
+  // Standard single day tickets - use original pass type for colors
+  switch (colorPassType) {
     case 'male': 
-      return { primary: '#FF0000', secondary: '#FF6B6B', name: 'RED' };
+      return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' }; // Changed to WHITE as requested
     case 'female': 
-      return { primary: '#0066FF', secondary: '#87CEEB', name: 'BLUE' };
+      return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' }; // Changed to PINK as requested
     case 'couple': 
-      return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' };
+      return { primary: '#8A2BE2', secondary: '#DDA0DD', name: 'PURPLE' }; // Keep PURPLE
     case 'family':
     case 'family4': 
-      return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' };
+      return { primary: '#32CD32', secondary: '#90EE90', name: 'GREEN' }; // Keep GREEN
     case 'kids':
     case 'kid': 
       return { primary: '#FFD700', secondary: '#FFFFE0', name: 'YELLOW' };
@@ -58,48 +81,48 @@ const getTicketColors = (passType, ticketType = 'single') => {
   }
 };
 
-// 🌈 Rainbow Design Generator - Appears 9 Times for Season Passes
-const addRainbowElements = (doc, colors, centerX = 210, centerY = 325) => {
+// 🌈 Rainbow Design Generator - Appears 9 Times for Season Passes (Updated for 480×720)
+const addRainbowElements = (doc, colors, centerX = 240, centerY = 360) => {
   const rainbowColors = colors.rainbowColors;
   
-  // Rainbow Element 1: Header Gradient Bar
+  // Rainbow Element 1: Header Gradient Bar - Updated for wider page
   for (let i = 0; i < rainbowColors.length; i++) {
-    doc.rect(40 + (i * 45), 30, 45, 8)
+    doc.rect(50 + (i * 55), 35, 55, 10)
        .fillColor(rainbowColors[i])
        .fill();
   }
   
-  // Rainbow Element 2: Side Border Stripes (Left)
+  // Rainbow Element 2: Side Border Stripes (Left) - Updated for taller page
   for (let i = 0; i < rainbowColors.length; i++) {
-    doc.rect(15, 80 + (i * 60), 8, 50)
+    doc.rect(20, 90 + (i * 70), 10, 60)
        .fillColor(rainbowColors[i])
        .fill();
   }
   
-  // Rainbow Element 3: Side Border Stripes (Right)
+  // Rainbow Element 3: Side Border Stripes (Right) - Updated for wider page
   for (let i = 0; i < rainbowColors.length; i++) {
-    doc.rect(397, 80 + (i * 60), 8, 50)
+    doc.rect(450, 90 + (i * 70), 10, 60)
        .fillColor(rainbowColors[i])
        .fill();
   }
   
-  // Rainbow Element 4: QR Code Frame
+  // Rainbow Element 4: QR Code Frame - Updated positioning
   for (let i = 0; i < rainbowColors.length; i++) {
-    doc.rect(centerX - 60 + (i * 17), centerY - 60, 15, 3)
+    doc.rect(centerX - 70 + (i * 20), centerY - 70, 18, 4)
        .fillColor(rainbowColors[i])
        .fill();
   }
   
-  // Rainbow Element 5: Decorative Circles
+  // Rainbow Element 5: Decorative Circles - Updated for wider page
   for (let i = 0; i < rainbowColors.length; i++) {
-    doc.circle(50 + (i * 45), 550, 8)
+    doc.circle(60 + (i * 52), 620, 10)
        .fillColor(rainbowColors[i])
        .fill();
   }
   
-  // Rainbow Element 6: Footer Wave Pattern
+  // Rainbow Element 6: Footer Wave Pattern - Updated for wider page
   for (let i = 0; i < rainbowColors.length; i++) {
-    doc.rect(30 + (i * 50), 600, 40, 6)
+    doc.rect(40 + (i * 57), 670, 50, 8)
        .fillColor(rainbowColors[i])
        .fill();
   }
@@ -150,7 +173,7 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
       }
 
       // Use centralized color mapping
-      const passTypeColors = getTicketColors(safePassType, ticket_type);
+      const passTypeColors = getTicketColors(safePassType, ticket_type, ticketData.original_pass_type);
 
       console.log('🎟️ Generating enhanced PDF ticket:', {
         name: safeName,
@@ -161,8 +184,8 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
       });
 
       const doc = new PDFDocument({ 
-        size: [420, 650], 
-        margin: 15,
+        size: [480, 720], // Increased from 420×650 for better spacing
+        margin: 25, // Increased from 15 for better content spacing
         info: {
           Title: `Malang Raas Dandiya 2025 - ${safeName}`,
           Author: 'Malang Events',
@@ -204,7 +227,7 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
 // New function to generate multi-page PDF with different colored tickets
 export const generateMultiPageTicketPDF = async (ticketsData) => {
   return new Promise(async (resolve, reject) => {
-    const doc = new PDFDocument({ size: [420, 650], margin: 15 });
+    const doc = new PDFDocument({ size: [480, 720], margin: 25 }); // Improved spacing
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('error', (e) => reject(e));
@@ -220,7 +243,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
         }
 
         // Use centralized color mapping
-        const passTypeColors = getTicketColors(ticketData.pass_type, ticketData.ticket_type);
+        const passTypeColors = getTicketColors(ticketData.pass_type, ticketData.ticket_type, ticketData.original_pass_type);
 
         await generateSingleTicketPage(doc, {
           name: ticketData.name || "Guest",
@@ -252,43 +275,44 @@ async function generateSingleTicketPage(doc, ticketData) {
     const safePassType = pass_type || "Standard Pass";
     const safeTicketType = ticket_type || "single";
     const safeVenue = venue || "Regal Lawns, Near Deolai Chowk, Beed Bypass, Chhatrapati Sambhajinagar";
+    const safeBookingId = booking_id ?? `BK${Date.now()}`;
 
     // Background - Rich gradient effect
-    doc.rect(0, 0, 420, 650).fillColor('#1a1a2e').fill();
+    doc.rect(0, 0, 480, 720).fillColor('#1a1a2e').fill();
     
     // 🌈 Add rainbow design for season passes (9 rainbow elements)
     if (passTypeColors.isRainbow) {
       addRainbowElements(doc, passTypeColors);
     }
     
-    // Decorative border with pass type color
-    doc.roundedRect(10, 10, 400, 630, 12)
+    // Decorative border with pass type color - Better proportions
+    doc.roundedRect(15, 15, 450, 690, 12)
        .lineWidth(3)
        .strokeColor(passTypeColors.primary)
        .stroke();
     
     // Inner decorative border
-    doc.roundedRect(18, 18, 384, 614, 10)
+    doc.roundedRect(23, 23, 434, 674, 10)
        .lineWidth(1)
        .strokeColor(passTypeColors.secondary)
        .stroke();
 
-    // Header background with pass type gradient effect - Made smaller
-    doc.rect(25, 25, 370, 85)
+    // Header background with pass type gradient effect - Better proportioned
+    doc.rect(30, 30, 420, 90)
        .fillColor(passTypeColors.primary)
        .fill();
     
     // Header decorative overlay
-    doc.rect(25, 25, 370, 85)
+    doc.rect(30, 30, 420, 90)
        .fillColor(passTypeColors.secondary)
        .fillOpacity(0.3)
        .fill()
        .fillOpacity(1);
 
         // Download and add logo
-        let yPos = 35;
+        let yPos = 40; // Adjusted for better spacing
         try {
-          const logoResponse = await axios.get('https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_7981.PNG', {
+          const logoResponse = await axios.get('https://qczbnczsidlzzwziubhu.supabase.co/storage/v1/object/public/malangdandiya/IMG_8079-removebg-preview.png', {
             responseType: 'arraybuffer',
             timeout: 15000,
             headers: {
@@ -297,102 +321,102 @@ async function generateSingleTicketPage(doc, ticketData) {
           });
           const logoBuffer = Buffer.from(logoResponse.data, 'binary');
           
-          // Logo positioning - Made smaller
-          doc.image(logoBuffer, 35, yPos, { width: 65, height: 65 });
+          // Logo positioning - Better proportioned
+          doc.image(logoBuffer, 40, yPos, { width: 70, height: 70 });
           
-          // Event title with logo - Reduced font sizes
-          doc.fontSize(18)
-             .fillColor('#ffffff')
+          // Event title with logo - Better font sizes
+          doc.fontSize(20)
+             .fillColor('#000000')
              .font('Helvetica-Bold')
-             .text('MALANG RAS DANDIYA 2025', 110, yPos + 8, {
-               width: 270,
+             .text('MALANG RAAS DANDIYA 2025', 120, yPos + 10, {
+               width: 310,
                align: 'center'
              });
           
           doc.fontSize(12)
              .fillColor('#ffd700')
              .font('Helvetica')
-             .text('', 110, yPos + 32, {
-               width: 270,
+             .text('', 120, yPos + 35, {
+               width: 310,
                align: 'center'
              });
              
           // Show different text for season pass vs single day
           const headerText = (safeTicketType === 'season') ? 'Official Season Pass (8 Days)' : 'Official Entry Pass';
-          doc.fontSize(10)
+          doc.fontSize(11)
              .fillColor('#ffffff')
-             .text(headerText, 110, yPos + 50, {
-               width: 270,
+             .text(headerText, 120, yPos + 55, {
+               width: 310,
                align: 'center'
              });
              
         } catch (logoErr) {
           console.warn('Logo download failed, using text header:', logoErr.message);
           
-          // Fallback header without logo - Reduced font sizes
-          doc.fontSize(20)
+          // Fallback header without logo - Better font sizes
+          doc.fontSize(22)
              .fillColor('#ffffff')
              .font('Helvetica-Bold')
-             .text(' MALANG RAS DANDIYA 2025 ', 35, yPos + 15, {
+             .text(' MALANG RAS DANDIYA 2025 ', 40, yPos + 20, {
                align: 'center',
-               width: 350
+               width: 400
              });
           
           // Show different text for season pass vs single day
           const fallbackHeaderText = (safeTicketType === 'season') ? ' Official Season Pass (8 Days) ' : ' Official Entry Pass ';
-          doc.fontSize(12)
+          doc.fontSize(13)
              .fillColor('#ffd700')
-             .text(fallbackHeaderText, 35, yPos + 45, {
+             .text(fallbackHeaderText, 40, yPos + 50, {
                align: 'center',
-               width: 350
+               width: 400
              });
         }
 
-        // Main content background - Made more compact
-        yPos = 125;
-        doc.rect(25, yPos, 370, 240)
+        // Main content background - Better proportioned
+        yPos = 135; // Adjusted for new layout
+        doc.rect(30, yPos, 420, 260)
            .fillColor('#ffffff')
            .fill();
 
-        // Guest Name Section - Reduced height
+        // Guest Name Section - Better proportioned
         yPos += 15;
-        doc.rect(35, yPos, 350, 40)
+        doc.rect(40, yPos, 400, 45)
            .fillColor('#fff8f0')
            .fill();
         
-        doc.fontSize(11)
+        doc.fontSize(12)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text(' GUEST NAME', 45, yPos + 5);
+           .text(' GUEST NAME', 50, yPos + 8);
         
         doc.font('Helvetica-Bold')
-           .fontSize(16)
+           .fontSize(18)
            .fillColor('#1a1a2e')
-           .text(safeName.toUpperCase(), 45, yPos + 20);
+           .text(safeName.toUpperCase(), 50, yPos + 25);
 
-        // Event Details Section - Reduced spacing
-        yPos += 55;
-        doc.fontSize(11)
+        // Event Details Section - Better spacing
+        yPos += 60;
+        doc.fontSize(12)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('EVENT DATE', 45, yPos);
+           .text('EVENT DATE', 50, yPos);
         
         doc.font('Helvetica')
-           .fontSize(14)
+           .fontSize(15)
            .fillColor('#1a1a2e')
            .text(new Date(safeDate).toLocaleDateString('en-IN', {
              weekday: 'long',
              year: 'numeric',
              month: 'long',
              day: 'numeric'
-           }), 45, yPos + 15);
+           }), 50, yPos + 18);
 
-        // Pass Type Section with Color Indicator - Reduced spacing
-        yPos += 40;
-        doc.fontSize(11)
+        // Pass Type Section with Color Indicator - Better spacing
+        yPos += 45;
+        doc.fontSize(12)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('PASS TYPE', 45, yPos);
+           .text('PASS TYPE', 50, yPos);
         
         // Pass type name with color - Enhanced for Season Pass
         const isSeasonPass = safeTicketType === 'season';
@@ -401,71 +425,71 @@ async function generateSingleTicketPage(doc, ticketData) {
         if (isSeasonPass) {
           // For season pass, show both the pass type and "SEASON PASS"
           doc.font('Helvetica-Bold')
-             .fontSize(12)
+             .fontSize(13)
              .fillColor(passTypeColors.primary)
-             .text(`${passTypeDisplay} - SEASON PASS`, 45, yPos + 15);
+             .text(`${passTypeDisplay} - SEASON PASS`, 50, yPos + 18);
           
           // Add "8 DAYS" subtitle for season pass
           doc.font('Helvetica')
-             .fontSize(10)
+             .fontSize(11)
              .fillColor('#666666')
-             .text('(8 Days Access)', 45, yPos + 30);
+             .text('(8 Days Access)', 50, yPos + 35);
         } else {
           // For single day tickets
           doc.font('Helvetica-Bold')
-             .fontSize(14)
+             .fontSize(15)
              .fillColor(passTypeColors.primary)
-             .text(passTypeDisplay, 45, yPos + 15);
+             .text(passTypeDisplay, 50, yPos + 18);
         }
         
-        // Color indicator badge - Made smaller
-        doc.rect(250, yPos + 8, 90, 20)
+        // Color indicator badge - Better proportioned
+        doc.rect(280, yPos + 10, 100, 25)
            .fillColor(passTypeColors.primary)
            .fill();
         
         // Color name on badge
         const textColor = passTypeColors.name === 'WHITE' ? '#000000' : '#FFFFFF';
-        doc.fontSize(10)
+        doc.fontSize(11)
            .fillColor(textColor)
            .font('Helvetica-Bold')
-           .text(passTypeColors.name, 250, yPos + 13, {
-             width: 90,
+           .text(passTypeColors.name, 280, yPos + 16, {
+             width: 100,
              align: 'center'
            });
 
-        // Venue Section - Reduced spacing
-        yPos += 40;
-        doc.fontSize(11)
+        // Venue Section - Better spacing
+        yPos += 45;
+        doc.fontSize(12)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('VENUE', 45, yPos);
+           .text('VENUE', 50, yPos);
         
         doc.font('Helvetica')
-           .fontSize(12)
+           .fontSize(13)
            .fillColor('#1a1a2e')
-           .text(safeVenue, 45, yPos + 15);
+           .text(safeVenue, 50, yPos + 18);
 
-        // Booking Details - Reduced spacing
-        yPos += 35;
-        doc.fontSize(9)
+        // Booking Details - Better spacing
+        yPos += 40;
+        doc.fontSize(10)
            .fillColor('#666666')
            .font('Helvetica')
-           .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 45, yPos);
+           .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 50, yPos);
 
-        // Enhanced QR Code Section with clickable features
-        yPos += 20;
-        doc.rect(25, yPos, 370, 120)
+        // Enhanced QR Code Section with clickable features - Better proportioned
+        yPos += 25;
+        doc.rect(30, yPos, 420, 130)
            .fillColor('#f8f9fa')
            .fill();
         
         // QR Section Header with enhanced styling
-        doc.fontSize(12)
+        doc.fontSize(13)
            .fillColor(passTypeColors.primary)
            .font('Helvetica-Bold')
-           .text('🔍 SCAN FOR ENTRY', 35, yPos + 10, { align: 'center', width: 350 });
+           .text('🔍 SCAN FOR ENTRY', 40, yPos + 12, { align: 'center', width: 400 });
 
         // Handle QR code with enhanced error handling and clickable features
-        const qrYPos = yPos + 30;
+        const qrYPos = yPos + 35; // Adjusted for new layout
         let qrCodeText = safeBookingId; // Default QR content
         
         try {
@@ -516,9 +540,9 @@ async function generateSingleTicketPage(doc, ticketData) {
             qrBuffer = await generateQRCodeBuffer(safeBookingId);
           }
           
-          // Enhanced QR code placement with professional styling
-          const qrSize = 80;
-          const qrX = 170;
+          // Enhanced QR code placement with professional styling - Better positioned
+          const qrSize = 85; // Slightly larger QR code
+          const qrX = 200; // Better centered for new layout
           
           // QR Code border with pass type color
           doc.rect(qrX - 2, qrYPos - 2, qrSize + 4, qrSize + 4)
@@ -543,9 +567,9 @@ async function generateSingleTicketPage(doc, ticketData) {
         } catch (qrError) {
           console.error('❌ QR code generation failed:', qrError.message);
           
-          // Enhanced fallback QR display
-          const qrSize = 80;
-          const qrX = 170;
+          // Enhanced fallback QR display - Better positioned
+          const qrSize = 85;
+          const qrX = 200;
           
           doc.rect(qrX, qrYPos, qrSize, qrSize)
             .lineWidth(2)
@@ -555,76 +579,76 @@ async function generateSingleTicketPage(doc, ticketData) {
             .fill();
           
           // Fallback icon
-          doc.fontSize(12)
+          doc.fontSize(13)
              .fillColor('#666666')
              .font('Helvetica-Bold')
-             .text('📱', qrX + qrSize/2 - 8, qrYPos + 15, { 
+             .text('📱', qrX + qrSize/2 - 10, qrYPos + 18, { 
                align: 'center', 
-               width: 16 
+               width: 20 
              });
           
-          doc.fontSize(9)
+          doc.fontSize(10)
              .fillColor('#666666')
              .font('Helvetica')
-             .text('QR Code\nUnavailable', qrX + 5, qrYPos + 30, { 
+             .text('QR Code\nUnavailable', qrX + 5, qrYPos + 35, { 
                align: 'center', 
                width: qrSize - 10 
              });
           
-          doc.fontSize(7)
+          doc.fontSize(8)
              .fillColor('#999999')
-             .text(`ID: ${booking_id || 'N/A'}`, qrX + 5, qrYPos + 55, { 
+             .text(`ID: ${booking_id || 'N/A'}`, qrX + 5, qrYPos + 60, { 
                align: 'center', 
                width: qrSize - 10 
              });
         }
         
-        // Add verification text below QR
-        doc.fontSize(8)
+        // Add verification text below QR - Better positioned
+        doc.fontSize(9)
            .fillColor('#666666')
            .font('Helvetica')
-           .text('Scan at entry gate for instant verification', 50, qrYPos + 85, { 
+           .text('Scan at entry gate for instant verification', 55, qrYPos + 95, { 
              align: 'center', 
-             width: 320 
+             width: 370 
            });
 
-        // Enhanced Footer section with clickable links
-        yPos += 135;
-        doc.rect(25, yPos, 370, 80)
+        // Enhanced Footer section with clickable links - Better positioned
+        yPos += 145;
+        doc.rect(30, yPos, 420, 85)
            .fillColor('#1a1a2e')
            .fill();
 
-        doc.fontSize(11)
+        doc.fontSize(12)
            .fillColor('#ffd700')
            .font('Helvetica-Bold')
-           .text('📅 EVENT DETAILS', 35, yPos + 8, { align: 'center', width: 350 });
+           .text('📅 EVENT DETAILS', 40, yPos + 10, { align: 'center', width: 400 });
 
-        doc.fontSize(9)
+        doc.fontSize(10)
            .fillColor('#ffffff')
            .font('Helvetica')
-           .text('Time: 7:00 PM onwards | 🎵 Live DJ & Traditional Music', 35, yPos + 25, { 
+           .text('Time: 7:00 PM onwards | 🎵 Live DJ & Traditional Music', 40, yPos + 28, { 
              align: 'center', 
-             width: 350 
+             width: 400 
            });
 
-        // Add clickable contact information
-        const contactY = yPos + 42;
-        doc.fontSize(8)
+        // Add clickable contact information - Better positioned
+        const contactY = yPos + 45;
+        doc.fontSize(9)
            .fillColor('#87CEEB')
-           .text('📞 Contact: +91-9876543210 | 📧 info@malangevents.com', 35, contactY, { 
+           .text('📞 Contact: +91-9876543210 | 📧 info@malangevents.com', 40, contactY, { 
              align: 'center', 
-             width: 350 
+             width: 400 
            });
            
         // Make contact info clickable
-        doc.link(180, contactY, 60, 10, 'tel:+919876543210');
-        doc.link(260, contactY, 100, 10, 'mailto:info@malangevents.com');
+        doc.link(200, contactY, 80, 12, 'tel:+919876543210');
+        doc.link(300, contactY, 120, 12, 'mailto:info@malangevents.com');
 
-        doc.fontSize(7)
+        doc.fontSize(8)
            .fillColor('#cccccc')
-           .text('🎟️ Entry subject to terms & conditions | No outside food/drinks | Valid ID required', 35, yPos + 58, { 
+           .text('🎟️ Entry subject to terms & conditions | No outside food/drinks | Valid ID required', 40, yPos + 63, { 
              align: 'center', 
-             width: 350 
+             width: 400 
            });
 
   } catch (error) {
@@ -799,7 +823,7 @@ export const generateMultipleTicketsPDFBuffer = async (ticketsData) => {
         // Get colors for this ticket and add to ticket data
         const ticketWithColors = {
           ...ticketsData[i],
-          passTypeColors: getTicketColors(ticketsData[i].pass_type, ticketsData[i].ticket_type)
+          passTypeColors: getTicketColors(ticketsData[i].pass_type, ticketsData[i].ticket_type, ticketsData[i].original_pass_type)
         };
         
         // Generate full page ticket
@@ -1053,7 +1077,6 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
           qrBuffer = Buffer.from(response.data, 'binary');
         } catch (downloadErr) {
           console.warn('Failed to download QR code, generating new one:', downloadErr.message);
-          const { generateQRCodeBuffer } = await import('./qrGenerator.js');
           const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
           qrBuffer = await generateQRCodeBuffer(ticketNum);
         }
@@ -1069,7 +1092,6 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
             qrBuffer = Buffer.from(base64Data, 'base64');
           } catch (imgErr) {
             console.warn('Invalid base64 QR data, generating new one');
-            const { generateQRCodeBuffer } = await import('./qrGenerator.js');
             const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
             qrBuffer = await generateQRCodeBuffer(ticketNum);
           }
@@ -1080,7 +1102,6 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
     } else {
       // Generate new QR code
       console.log('📱 No QR code provided, generating new one');
-      const { generateQRCodeBuffer } = await import('./qrGenerator.js');
       const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
       qrBuffer = await generateQRCodeBuffer(ticketNum);
     }
