@@ -1,4 +1,4 @@
-const { query } = require('../config/database');
+import { query } from '../config/database.js';
 
 /**
  * QR Controller
@@ -8,13 +8,16 @@ const { query } = require('../config/database');
 /**
  * Verify QR code and get ticket details
  */
-exports.verifyQR = async (req, res) => {
+export const verifyQR = async (req, res) => {
+  console.log('🚀 VERIFYQR FUNCTION CALLED!');
   try {
     const { qr_code, qr_data } = req.body;
     const qrCodeValue = qr_code || qr_data;
 
     console.log('🔍 QR verification request for:', qrCodeValue);
     console.log('🔍 Request body:', req.body);
+    console.log('🔍 QR data type:', typeof qrCodeValue);
+    console.log('🔍 QR data length:', qrCodeValue ? qrCodeValue.length : 0);
 
     if (!qrCodeValue) {
       return res.status(400).json({
@@ -23,30 +26,88 @@ exports.verifyQR = async (req, res) => {
       });
     }
 
+    // Test database query without inner try-catch to see the actual error
+    let qrResult;
+    let parsedQrData = null;
+    
+    // Try to parse QR data as JSON first
     try {
-      // Get QR details from database
-      const qrResult = await query(`
-        SELECT 
-          qr.id,
-          qr.qr_code,
-          qr.booking_id,
-          qr.user_id,
-          qr.is_used,
-          qr.used_at,
-          qr.used_by,
-          qr.created_at,
-          b.booking_date,
-          b.pass_type,
-          b.status as booking_status,
-          u.name,
-          u.email,
-          u.mobile
-        FROM qr_codes qr
-        JOIN bookings b ON qr.booking_id = b.id
-        JOIN booking_users bu ON qr.user_id = bu.id
-        JOIN users u ON bu.user_id = u.id
-        WHERE qr.qr_code = $1
-      `, [qrCodeValue]);
+      parsedQrData = JSON.parse(qrCodeValue);
+    } catch (parseError) {
+      // If not JSON, treat as plain ticket number
+      console.log('QR data is not JSON, treating as ticket number');
+    }
+    
+    try {
+      // Try different query strategies based on QR data format
+      if (parsedQrData && parsedQrData.ticketNumber) {
+        // Query by ticket number from parsed JSON
+        console.log('🔍 Querying by ticket number:', parsedQrData.ticketNumber);
+        qrResult = await query(`
+          SELECT 
+            qr.id,
+            qr.ticket_number,
+            qr.qr_data,
+            qr.booking_id,
+            qr.user_id,
+            qr.is_used,
+            qr.used_at,
+            qr.used_by,
+            qr.created_at,
+            qr.expiry_date,
+            b.booking_date,
+            b.pass_type,
+            b.status as booking_status,
+            u.name,
+            u.email,
+            u.mobile
+          FROM qr_codes qr
+          JOIN bookings b ON qr.booking_id = b.id
+          LEFT JOIN booking_users bu ON qr.user_id = bu.id
+          LEFT JOIN users u ON bu.user_id = u.id
+          WHERE qr.ticket_number = $1
+        `, [parsedQrData.ticketNumber]);
+      } else {
+        // Query by QR data content or ticket number directly
+        console.log('🔍 Querying by qr_data or ticket_number:', qrCodeValue);
+        qrResult = await query(`
+          SELECT 
+            qr.id,
+            qr.ticket_number,
+            qr.qr_data,
+            qr.booking_id,
+            qr.user_id,
+            qr.is_used,
+            qr.used_at,
+            qr.used_by,
+            qr.created_at,
+            qr.expiry_date,
+            b.booking_date,
+            b.pass_type,
+            b.status as booking_status,
+            u.name,
+            u.email,
+            u.mobile
+          FROM qr_codes qr
+          JOIN bookings b ON qr.booking_id = b.id
+          LEFT JOIN booking_users bu ON qr.user_id = bu.id
+          LEFT JOIN users u ON bu.user_id = u.id
+          WHERE qr.qr_data::text = $1 OR qr.ticket_number = $1
+        `, [qrCodeValue]);
+      }
+
+      console.log('🔍 Database query result rows:', qrResult.rows.length);
+        
+      // If no results found, let's check what QR codes exist in the database
+      if (qrResult.rows.length === 0) {
+        const allQRs = await query(`
+          SELECT id, ticket_number, SUBSTRING(qr_data::text, 1, 50) as qr_data_preview, created_at 
+          FROM qr_codes 
+          ORDER BY created_at DESC 
+          LIMIT 5
+        `);
+        console.log('🔍 Recent QR codes in database:', allQRs.rows);
+      }
 
       if (qrResult.rows.length === 0) {
         console.log('❌ QR code not found:', qrCodeValue);
@@ -68,9 +129,12 @@ exports.verifyQR = async (req, res) => {
       res.json({
         success: true,
         message: 'QR code verified successfully',
+        already_used: qrData.is_used,
+        guest_name: qrData.name,
         data: {
           qr_id: qrData.id,
-          qr_code: qrData.qr_code,
+          qr_code: qrData.ticket_number, // Use ticket_number as qr_code
+          ticket_number: qrData.ticket_number,
           booking_id: qrData.booking_id,
           user_id: qrData.user_id,
           is_used: qrData.is_used,
@@ -84,12 +148,14 @@ exports.verifyQR = async (req, res) => {
             email: qrData.email,
             mobile: qrData.mobile
           },
-          created_at: qrData.created_at
+          created_at: qrData.created_at,
+          expiry_date: qrData.expiry_date
         }
       });
 
     } catch (dbError) {
       console.log('⚠️ Database error during QR verification:', dbError.message);
+      console.log('⚠️ Full error:', dbError);
       
       // Parse QR data if it's JSON format
       let parsedData = {};
@@ -104,9 +170,12 @@ exports.verifyQR = async (req, res) => {
       return res.json({
         success: true,
         message: 'QR code verified successfully (mock)',
+        already_used: false,
+        guest_name: 'Demo User',
         data: {
           qr_id: 1,
           qr_code: qrCodeValue,
+          ticket_number: parsedData.ticketNumber || qrCodeValue,
           booking_id: parsedData.bookingId || 1,
           user_id: 1,
           is_used: false,
@@ -121,9 +190,8 @@ exports.verifyQR = async (req, res) => {
             mobile: '+1234567890'
           },
           created_at: new Date().toISOString(),
-          mock: true,
-          already_used: false,
-          guest_name: 'Demo User'
+          expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          mock: true
         }
       });
     }
@@ -140,7 +208,7 @@ exports.verifyQR = async (req, res) => {
 /**
  * Mark QR code as used
  */
-exports.markQRUsed = async (req, res) => {
+export const markQRUsed = async (req, res) => {
   try {
     const { qr_code, qr_data, staff_id, staff_name } = req.body;
     const qrCodeValue = qr_code || qr_data;
@@ -156,12 +224,31 @@ exports.markQRUsed = async (req, res) => {
     }
 
     try {
-      // First verify the QR exists and is not already used
-      const qrResult = await query(`
-        SELECT id, is_used, used_at 
-        FROM qr_codes 
-        WHERE qr_code = $1
-      `, [qrCodeValue]);
+      let qrResult;
+      let parsedQrData = null;
+      
+      // Try to parse QR data as JSON first
+      try {
+        parsedQrData = JSON.parse(qrCodeValue);
+      } catch (parseError) {
+        // If not JSON, treat as plain ticket number
+        console.log('QR data is not JSON, treating as ticket number');
+      }
+      
+      // Query using similar logic as verify
+      if (parsedQrData && parsedQrData.ticketNumber) {
+        qrResult = await query(`
+          SELECT id, ticket_number, is_used, used_at 
+          FROM qr_codes 
+          WHERE ticket_number = $1
+        `, [parsedQrData.ticketNumber]);
+      } else {
+        qrResult = await query(`
+          SELECT id, ticket_number, is_used, used_at 
+          FROM qr_codes 
+          WHERE qr_data = $1 OR ticket_number = $1
+        `, [qrCodeValue]);
+      }
 
       if (qrResult.rows.length === 0) {
         return res.status(404).json({
@@ -181,12 +268,22 @@ exports.markQRUsed = async (req, res) => {
       }
 
       // Mark as used
-      const updateResult = await query(`
-        UPDATE qr_codes 
-        SET is_used = true, used_at = NOW(), used_by = $2
-        WHERE qr_code = $1
-        RETURNING *
-      `, [qrCodeValue, staff_name || 'Staff']);
+      let updateResult;
+      if (parsedQrData && parsedQrData.ticketNumber) {
+        updateResult = await query(`
+          UPDATE qr_codes 
+          SET is_used = true, used_at = NOW(), used_by = $2
+          WHERE ticket_number = $1
+          RETURNING *
+        `, [parsedQrData.ticketNumber, staff_name || 'Staff']);
+      } else {
+        updateResult = await query(`
+          UPDATE qr_codes 
+          SET is_used = true, used_at = NOW(), used_by = $2
+          WHERE qr_data = $1 OR ticket_number = $1
+          RETURNING *
+        `, [qrCodeValue, staff_name || 'Staff']);
+      }
 
       console.log('✅ QR marked as used successfully:', qrCodeValue);
 
@@ -228,4 +325,5 @@ exports.markQRUsed = async (req, res) => {
 /**
  * Get QR details (alias for verifyQR for backward compatibility)
  */
-exports.getQRDetails = exports.verifyQR;
+export const getQRDetails = verifyQR;
+

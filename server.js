@@ -147,7 +147,8 @@ try {
   app.use("/api/qr", qrRoutes);
   console.log("✅ QR routes loaded");
 } catch (err) {
-  console.log("⚠️ QR routes not found, skipping...");
+  console.log("⚠️ QR routes error:", err.message);
+  console.log("⚠️ QR routes stack:", err.stack);
 }
 
 // Booking routes (inline definition since bookingRoutes.js might not exist)

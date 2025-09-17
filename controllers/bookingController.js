@@ -174,13 +174,40 @@ export const createBooking = async (req, res) => {
   let totalTickets = 0;
   
   if (passes && typeof passes === 'object') {
-    // New format: multiple pass types
-    bookingPasses = passes;
-    totalTickets = Object.values(passes).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    // New format: multiple pass types with proper couple/family expansion
+    const original_passes_stored = JSON.parse(JSON.stringify(passes)); // Deep copy for tracking
+    
+    // Process and expand couple/family tickets
+    for (const [passType, count] of Object.entries(passes)) {
+      const passCount = Number(count) || 0;
+      
+      if (passType === 'couple' && passCount > 0) {
+        // Each couple ticket becomes 1 male + 1 female
+        console.log(`🎯 Expanding ${passCount} couple ticket(s) to ${passCount} male + ${passCount} female`);
+        bookingPasses.male = (bookingPasses.male || 0) + passCount;
+        bookingPasses.female = (bookingPasses.female || 0) + passCount;
+      } else if ((passType === 'family' || passType === 'family4') && passCount > 0) {
+        // Each family ticket becomes 2 male + 2 female
+        console.log(`🎯 Expanding ${passCount} family ticket(s) to ${passCount * 2} male + ${passCount * 2} female`);
+        bookingPasses.male = (bookingPasses.male || 0) + (passCount * 2);
+        bookingPasses.female = (bookingPasses.female || 0) + (passCount * 2);
+      } else {
+        // Regular tickets (male, female, kids, etc.) - add to existing count
+        bookingPasses[passType] = (bookingPasses[passType] || 0) + passCount;
+      }
+    }
+    
+    totalTickets = Object.values(bookingPasses).reduce((sum, count) => sum + (Number(count) || 0), 0);
+    
+    console.log('🎟️ Pass expansion result:', {
+      original: passes,
+      expanded: bookingPasses,
+      totalTickets: totalTickets
+    });
     
     // Log the couple ticket conversion for tracking
-    if (original_passes && original_passes.couple) {
-      console.log(`🎯 Couple ticket conversion: ${original_passes.couple} couple tickets converted to ${original_passes.couple} male + ${original_passes.couple} female tickets`);
+    if (passes.couple) {
+      console.log(`🎯 Couple ticket conversion: ${passes.couple} couple tickets converted to ${bookingPasses.male} male + ${bookingPasses.female} female tickets`);
     }
   } else if (num_tickets && pass_type) {
     // Old format: single pass type (backward compatibility)
@@ -189,8 +216,12 @@ export const createBooking = async (req, res) => {
   }
   
   // Auto-set ticket quantities based on pass type
-  let finalTicketCount = num_tickets;
-  if (pass_type === 'couple') {
+  let finalTicketCount;
+  if (passes && typeof passes === 'object') {
+    // For multi-pass bookings, use the calculated total after expansion
+    finalTicketCount = totalTickets;
+    console.log(`🎫 Multi-pass booking: Using expanded totalTickets = ${totalTickets}`);
+  } else if (pass_type === 'couple') {
     finalTicketCount = 2;
     console.log('🎫 Auto-setting couple tickets to 2');
   } else if (pass_type === 'family' || pass_type === 'family4') {
@@ -222,10 +253,19 @@ export const createBooking = async (req, res) => {
     });
   }
 
-  // � AUTO-DETECT SEASON PASS BASED ON DATE
+  // 📅 EVENT DATE VALIDATION
   // Season dates: September 23, 2025 to October 1, 2025 (8 days)
   const seasonStart = new Date('2025-09-23');
   const seasonEnd = new Date('2025-10-01');
+  
+  // Validate booking date is within event period
+  if (parsedDate < seasonStart || parsedDate > seasonEnd) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid booking_date",
+      message: `❌ Bookings are only allowed for dates between ${seasonStart.toDateString()} and ${seasonEnd.toDateString()}. Selected date: ${parsedDate.toDateString()}`
+    });
+  }
   
   // Check if booking date falls within season period
   const isSeasonDate = parsedDate >= seasonStart && parsedDate <= seasonEnd;
@@ -592,21 +632,21 @@ export const createBooking = async (req, res) => {
         discount_amount: totalDiscount,
         final_amount: totalAmount,
         pass_details: JSON.stringify({ 
-          passes: bookingPasses, 
+          passes: bookingPasses, // Expanded passes (e.g., {male: 2, female: 1} from {couple: 1, male: 1})
           details: passDetails,
-          original_passes: original_passes || bookingPasses,
-          couple_conversion: original_passes && original_passes.couple ? {
-            couple_tickets: original_passes.couple,
+          original_passes: passes || bookingPasses, // Original request (e.g., {couple: 1, male: 1})
+          couple_conversion: passes && passes.couple ? {
+            couple_tickets: passes.couple,
             converted_to: {
-              male: original_passes.couple,
-              female: original_passes.couple
+              male: passes.couple,
+              female: passes.couple
             }
           } : null,
-          family_conversion: original_passes && original_passes.family ? {
-            family_tickets: original_passes.family,
+          family_conversion: passes && (passes.family || passes.family4) ? {
+            family_tickets: passes.family || passes.family4,
             converted_to: {
-              male: original_passes.family * 2,
-              female: original_passes.family * 2
+              male: (passes.family || passes.family4) * 2,
+              female: (passes.family || passes.family4) * 2
             }
           } : null
         }),
@@ -1200,8 +1240,32 @@ export const createPayment = async (req, res) => {
 
     res.status(200).json({ success: true, order });
   } catch (err) {
-    console.error("Error in createPayment:", err);
-    res.status(500).json({ error: "Failed to create payment order" });
+    console.error("❌ Error in createPayment:", err);
+    console.error("❌ Error details:", {
+      message: err.message,
+      stack: err.stack,
+      name: err.name
+    });
+    
+    // Send more specific error message
+    let errorMessage = "Failed to create payment order";
+    if (err.message) {
+      if (err.message.includes('Razorpay')) {
+        errorMessage = "Razorpay configuration error";
+      } else if (err.message.includes('amount')) {
+        errorMessage = "Invalid payment amount";
+      } else if (err.message.includes('database') || err.message.includes('query')) {
+        errorMessage = "Database error during payment creation";
+      } else {
+        errorMessage = `Payment creation failed: ${err.message}`;
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 
@@ -1259,7 +1323,9 @@ export const confirmPayment = async (req, res) => {
       let individualPassTypes = [];
       
       try {
-        const passDetails = JSON.parse(booking.pass_details || '{}');
+        const passDetails = typeof booking.pass_details === 'string' 
+          ? (booking.pass_details === '[object Object]' ? {} : JSON.parse(booking.pass_details || '{}'))
+          : booking.pass_details || {};
         const originalPasses = passDetails.original_passes || passDetails.passes || {};
         const expandedPasses = passDetails.passes || {}; // This contains the expanded counts
         
@@ -1271,8 +1337,23 @@ export const confirmPayment = async (req, res) => {
         
         // Build array of individual pass types based on expanded passes (not original)
         // This handles couple/family ticket expansion properly
-        for (const [passType, count] of Object.entries(expandedPasses)) {
-          for (let j = 0; j < (Number(count) || 0); j++) {
+        // Sort entries to ensure consistent order: male, female, kids, etc.
+        const sortedEntries = Object.entries(expandedPasses).sort(([a], [b]) => {
+          const order = ['male', 'female', 'kids', 'kid', 'couple', 'family', 'family4'];
+          const aIndex = order.indexOf(a);
+          const bIndex = order.indexOf(b);
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+          if (aIndex !== -1) return -1;
+          if (bIndex !== -1) return 1;
+          return a.localeCompare(b);
+        });
+        
+        console.log('🔤 Sorted pass entries for QR generation:', sortedEntries);
+        
+        for (const [passType, count] of sortedEntries) {
+          const ticketCount = Number(count) || 0;
+          console.log(`   Adding ${ticketCount} tickets of type "${passType}"`);
+          for (let j = 0; j < ticketCount; j++) {
             individualPassTypes.push(passType);
           }
         }
@@ -1443,7 +1524,9 @@ async function sendTicketNotifications(booking_id, payment_id) {
           
           try {
             // Parse QR data to get the actual pass type for this ticket
-            const qrData = JSON.parse(qrCodeData.qr_data || '{}');
+            const qrData = typeof qrCodeData.qr_data === 'string' 
+              ? (qrCodeData.qr_data === '[object Object]' ? {} : JSON.parse(qrCodeData.qr_data || '{}'))
+              : qrCodeData.qr_data || {};
             if (qrData.passType) {
               individualPassType = qrData.passType;
               
@@ -1457,13 +1540,53 @@ async function sendTicketNotifications(booking_id, payment_id) {
             }
           } catch (error) {
             console.error('Error parsing QR data:', error);
-            // Fallback to original logic for couple/family
+            // Improved fallback logic for different booking types
             if (booking.pass_type === 'couple') {
               individualPassType = (i % 2 === 0) ? 'female' : 'male';
               originalPassType = 'couple';
             } else if (booking.pass_type === 'family') {
               individualPassType = (i < 2) ? 'female' : 'male';
               originalPassType = 'family';
+            } else {
+              // For multi-pass bookings where pass_type might be the primary type,
+              // try to get the actual pass type from pass_details
+              try {
+                const passDetails = typeof booking.pass_details === 'string' 
+                  ? (booking.pass_details === '[object Object]' ? {} : JSON.parse(booking.pass_details || '{}'))
+                  : booking.pass_details || {};
+                const expandedPasses = passDetails.passes || {};
+                
+                // Build array of pass types in order
+                const passList = [];
+                const sortedEntries = Object.entries(expandedPasses).sort(([a], [b]) => {
+                  const order = ['male', 'female', 'kids', 'kid', 'couple', 'family', 'family4'];
+                  const aIndex = order.indexOf(a);
+                  const bIndex = order.indexOf(b);
+                  if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+                  if (aIndex !== -1) return -1;
+                  if (bIndex !== -1) return 1;
+                  return a.localeCompare(b);
+                });
+                
+                for (const [passType, count] of sortedEntries) {
+                  for (let j = 0; j < (Number(count) || 0); j++) {
+                    passList.push(passType);
+                  }
+                }
+                
+                if (passList[i]) {
+                  individualPassType = passList[i];
+                  originalPassType = individualPassType;
+                } else {
+                  // Final fallback
+                  individualPassType = booking.pass_type;
+                  originalPassType = booking.pass_type;
+                }
+              } catch (passDetailsError) {
+                console.error('Error parsing pass_details for fallback:', passDetailsError);
+                individualPassType = booking.pass_type;
+                originalPassType = booking.pass_type;
+              }
             }
           }
           
@@ -1704,17 +1827,32 @@ async function sendTicketNotifications(booking_id, payment_id) {
 
 // 5️⃣ Get QR Details (for verification)
 export const getQRDetails = async (req, res) => {
-  const { ticket_number } = req.body;
+  console.log('🔍 getQRDetails called!');
+  console.log('🔍 Request body:', req.body);
+  
+  const { ticket_number, qr_data, qr_code } = req.body;
+  const qrCodeValue = qr_code || qr_data || ticket_number;
+  
+  console.log('🔍 QR Code Value:', qrCodeValue);
+  
+  if (!qrCodeValue) {
+    return res.status(400).json({ error: "QR code is required" });
+  }
+  
   try {
+    // Simple query first to test
     const qrResult = await query(`
       SELECT qr.*, b.pass_type, u.name as user_name
       FROM qr_codes qr
       LEFT JOIN bookings b ON qr.booking_id = b.id
       LEFT JOIN users u ON qr.user_id = u.id
       WHERE qr.ticket_number = $1
-    `, [ticket_number]);
+    `, [qrCodeValue]);
+
+    console.log('🔍 Query result rows:', qrResult.rows.length);
 
     if (qrResult.rows.length === 0) {
+      console.log('❌ Ticket not found for:', qrCodeValue);
       return res.status(404).json({ error: "Ticket not found" });
     }
 
@@ -1725,10 +1863,21 @@ export const getQRDetails = async (req, res) => {
       ...qrCode,
       id: qrCode.id.toString(),
       booking_id: qrCode.booking_id.toString(),
-      user_id: qrCode.user_id ? qrCode.user_id.toString() : null
+      user_id: qrCode.user_id ? qrCode.user_id.toString() : null,
+      // Add fields expected by QR verifier
+      success: true,
+      already_used: qrCode.is_used,
+      guest_name: qrCode.user_name
     };
 
-    res.status(200).json({ success: true, ticket: ticketResponse });
+    console.log('✅ Ticket found, returning response');
+    res.status(200).json({ 
+      success: true, 
+      ticket: ticketResponse,
+      // Also include direct fields for compatibility
+      already_used: qrCode.is_used,
+      guest_name: qrCode.user_name
+    });
   } catch (err) {
     console.error("Error in getQRDetails:", err);
     res.status(500).json({ error: "Failed to get QR details" });

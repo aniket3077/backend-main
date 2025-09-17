@@ -8,8 +8,8 @@ import QRCode from "qrcode";
  * 🎟️ OFFICIAL TICKET COLOR RULES - Master Implementation
  * 
  * Single Tickets:
- * - Male → RED (❌ cannot be purchased alone)
- * - Female → BLUE  
+ * - Male → BLACK (❌ cannot be purchased alone)
+ * - Female → PINK  
  * - Couple → PURPLE (always 2 tickets in PDF)
  * - Family → GREEN (always 4 tickets in PDF) 
  * - Kid → YELLOW (❌ cannot be purchased alone)
@@ -42,7 +42,7 @@ const getTicketColors = (passType, ticketType = 'single', originalPassType = nul
   // Standard single day tickets - use original pass type for colors
   switch (colorPassType) {
     case 'male':
-      return { primary: '#FFFFFF', secondary: '#F5F5F5', name: 'WHITE' }; // WHITE as requested
+      return { primary: '#000000', secondary: '#333333', name: 'BLACK' }; // BLACK as requested
     case 'female':
       return { primary: '#FF69B4', secondary: '#FFB6C1', name: 'PINK' }; // PINK as requested
     case 'couple':
