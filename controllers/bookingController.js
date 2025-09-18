@@ -182,128 +182,116 @@ export const createBooking = async (req, res) => {
       const passCount = Number(count) || 0;
       
       if (passType === 'couple' && passCount > 0) {
-        // Each couple ticket becomes 1 male + 1 female
-        console.log(`🎯 Expanding ${passCount} couple ticket(s) to ${passCount} male + ${passCount} female`);
-        bookingPasses.male = (bookingPasses.male || 0) + passCount;
-        bookingPasses.female = (bookingPasses.female || 0) + passCount;
-      } else if ((passType === 'family' || passType === 'family4') && passCount > 0) {
-        // Each family ticket becomes 2 male + 2 female
-        console.log(`🎯 Expanding ${passCount} family ticket(s) to ${passCount * 2} male + ${passCount * 2} female`);
-        bookingPasses.male = (bookingPasses.male || 0) + (passCount * 2);
-        bookingPasses.female = (bookingPasses.female || 0) + (passCount * 2);
-      } else {
-        // Regular tickets (male, female, kids, etc.) - add to existing count
-        bookingPasses[passType] = (bookingPasses[passType] || 0) + passCount;
-      }
-    }
-    
-    totalTickets = Object.values(bookingPasses).reduce((sum, count) => sum + (Number(count) || 0), 0);
-    
-    console.log('🎟️ Pass expansion result:', {
-      original: passes,
-      expanded: bookingPasses,
-      totalTickets: totalTickets
-    });
-    
-    // Log the couple ticket conversion for tracking
-    if (passes.couple) {
-      console.log(`🎯 Couple ticket conversion: ${passes.couple} couple tickets converted to ${bookingPasses.male} male + ${bookingPasses.female} female tickets`);
-    }
-  } else if (num_tickets && pass_type) {
-    // Old format: single pass type (backward compatibility)
-    bookingPasses = { [pass_type]: Number(num_tickets) };
-    totalTickets = Number(num_tickets);
-  }
-  
-  // Auto-set ticket quantities based on pass type
-  let finalTicketCount;
-  if (passes && typeof passes === 'object') {
-    // For multi-pass bookings, use the calculated total after expansion
-    finalTicketCount = totalTickets;
-    console.log(`🎫 Multi-pass booking: Using expanded totalTickets = ${totalTickets}`);
-  } else if (pass_type === 'couple') {
-    finalTicketCount = 2;
-    console.log('🎫 Auto-setting couple tickets to 2');
-  } else if (pass_type === 'family' || pass_type === 'family4') {
-    finalTicketCount = 4;
-    console.log('🎫 Auto-setting family tickets to 4');
-  } else {
-    finalTicketCount = num_tickets || 1;
-  }
-  
-  // Validate required fields
+        let priceInfo;
+        let totalAmount = 0;
+        let totalDiscount = 0;
+        let discountApplied = false;
+        let pricePerTicket;
 
-  if (!booking_date || !pass_type) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing required fields",
-      message: "booking_date and pass_type are required"
+        try {
+          // Multi-pass booking: calculate total for all pass types
+          if (passes && typeof passes === 'object' && Object.keys(passes).filter(key => passes[key] > 0).length > 0) {
+            // Check if booking date is 2025-09-23
+            const isFemaleDiscountDay = parsedDate.toISOString().slice(0, 10) === '2025-09-23';
+            const isBulkDiscount = totalTickets >= 6;
+            let passDetailsArray = [];
+            Object.entries(passes).forEach(([passType, count]) => {
+              const passCount = Number(count) || 0;
+              if (passCount <= 0) return;
 
-  
-    });
-  }
+              let passCalc;
+              if (passType === 'female' && isFemaleDiscountDay) {
+                // Always ₹199 for females on 23rd Sep
+                const basePrice = TICKET_PRICING[finalTicketType]?.[passType]?.base || 399;
+                passCalc = {
+                  basePrice: basePrice,
+                  finalPrice: 199,
+                  pricePerTicket: 199,
+                  discountApplied: true,
+                  totalAmount: 199 * passCount,
+                  savings: (basePrice - 199) * passCount,
+                  discountAmount: (basePrice - 199) * passCount
+                };
+                console.log(`   ${passType}: ₹199 × ${passCount} = ₹${passCalc.totalAmount} (Female Sep 23rd offer)`);
+              } else if (isBulkDiscount && passType === 'male') {
+                // Bulk discount for male only
+                const basePrice = TICKET_PRICING[finalTicketType]?.[passType]?.base || 499;
+                passCalc = {
+                  basePrice: basePrice,
+                  finalPrice: 350,
+                  pricePerTicket: 350,
+                  discountApplied: true,
+                  totalAmount: 350 * passCount,
+                  savings: (basePrice - 350) * passCount,
+                  discountAmount: (basePrice - 350) * passCount
+                };
+                console.log(`   ${passType}: ₹350 × ${passCount} = ₹${passCalc.totalAmount} (Bulk discount applied)`);
+              } else {
+                // No bulk discount for couple, family, kids, or normal pricing for male/female
+                passCalc = calculateTicketPrice(passType, finalTicketType, passCount);
+                console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
+              }
 
-  // Parse and validate date
-  const parsedDate = new Date(booking_date);
-  if (isNaN(parsedDate.getTime())) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid booking_date",
-      message: "Booking date must be a valid date"
-    });
-  }
-
-  // 📅 EVENT DATE VALIDATION
-  // Season dates: September 23, 2025 to October 1, 2025 (8 days)
-  const seasonStart = new Date('2025-09-23');
-  const seasonEnd = new Date('2025-10-01');
-  
-  // Validate booking date is within event period
-  if (parsedDate < seasonStart || parsedDate > seasonEnd) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid booking_date",
-      message: `❌ Bookings are only allowed for dates between ${seasonStart.toDateString()} and ${seasonEnd.toDateString()}. Selected date: ${parsedDate.toDateString()}`
-    });
-  }
-  
-  // Check if booking date falls within season period
-  const isSeasonDate = parsedDate >= seasonStart && parsedDate <= seasonEnd;
-  
-  // Auto-convert to season pass if date is within season period - DISABLED
-  let finalTicketType = ticket_type; // Respect user's explicit choice
-  // Commented out auto-conversion to respect user choice
-  // if (isSeasonDate && ticket_type === 'single') {
-  //   finalTicketType = 'season';
-  //   console.log(`🎟️ AUTO-DETECTED: Converting single ticket to season pass for date ${booking_date}`);
-  //   console.log(`📅 Season period: ${seasonStart.toDateString()} to ${seasonEnd.toDateString()}`);
-  // }
-
-  console.log(`🎯 Final ticket type: ${finalTicketType} (respecting user choice - no auto-conversion)`);
-
-  // �🎟️ NEW TICKET PURCHASE VALIDATION RULES
-  // Check if male or kid tickets are being purchased alone (not allowed)
-  if (passes && typeof passes === 'object') {
-    // New format: multiple pass types
-    const passTypes = Object.keys(passes).filter(key => passes[key] > 0);
-    const hasOnlyMale = passTypes.length === 1 && passTypes[0] === 'male';
-    const hasOnlyKid = passTypes.length === 1 && (passTypes[0] === 'kids' || passTypes[0] === 'kid');
-    
-    if (hasOnlyMale) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid ticket selection",
-        message: "❌ Stag Male entries are not allowed. Male tickets must be purchased with other ticket types (couple, family, etc.)."
-      });
-    }
-    
-    if (hasOnlyKid) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid ticket selection", 
-        message: "❌ Kid tickets cannot be purchased alone. Please add other ticket types."
-      });
-    }
+              if (passCalc && typeof passCalc.totalAmount === 'number') {
+                totalAmount += passCalc.totalAmount;
+                totalDiscount += passCalc.discountAmount || 0;
+                if (passCalc.discountApplied) discountApplied = true;
+                passDetailsArray.push({
+                  passType,
+                  count: passCount,
+                  unitPrice: passCalc.pricePerTicket,
+                  subtotal: passCalc.totalAmount,
+                  discountApplied: passCalc.discountApplied,
+                  savings: passCalc.savings || 0
+                });
+              }
+            });
+            pricePerTicket = totalAmount / finalTicketCount;
+            priceInfo = {
+              totalAmount,
+              pricePerTicket,
+              discountApplied,
+              discountAmount: totalDiscount,
+              basePrice: pricePerTicket,
+              finalPrice: pricePerTicket,
+              passDetails: passDetailsArray,
+              bulkDiscount: isBulkDiscount
+            };
+          } else {
+            // Single pass type booking (legacy path)
+            priceInfo = calculateTicketPrice(pass_type, finalTicketType, finalTicketCount);
+            if (!priceInfo || typeof priceInfo.totalAmount !== 'number') {
+              throw new Error(`Invalid pricing calculation for ${pass_type} ${ticket_type}`);
+            }
+            totalAmount = priceInfo.totalAmount;
+            totalDiscount = priceInfo.discountAmount || 0;
+            discountApplied = priceInfo.discountApplied || false;
+            pricePerTicket = priceInfo.pricePerTicket;
+            console.log(`🎟️ Single pass booking: ${pass_type} ₹${pricePerTicket} × ${finalTicketCount} = ₹${totalAmount}`);
+          }
+          if (totalAmount <= 0) {
+            throw new Error('Invalid total amount calculated');
+          }
+          if (pricePerTicket <= 0) {
+            throw new Error('Invalid price per ticket calculated');
+          }
+          console.log('✅ Pricing calculation successful:', {
+            pass_type,
+            ticket_type,
+            finalTicketCount,
+            pricePerTicket,
+            totalAmount,
+            discountApplied,
+            totalDiscount
+          });
+        } catch (pricingError) {
+          console.error('❌ Pricing calculation failed:', pricingError.message);
+          return res.status(400).json({
+            success: false,
+            error: "Pricing calculation error",
+            message: `Failed to calculate pricing for ${pass_type} ${finalTicketType}: ${pricingError.message}`
+          });
+        }
   } else if (pass_type) {
     // Old format: single pass type (backward compatibility)
     if (pass_type === 'male') {
