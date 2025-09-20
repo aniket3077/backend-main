@@ -1855,9 +1855,23 @@ export const getQRDetails = async (req, res) => {
   console.log('🔍 Request body:', req.body);
   
   const { ticket_number, qr_data, qr_code } = req.body;
-  const qrCodeValue = qr_code || qr_data || ticket_number;
   
-  console.log('🔍 QR Code Value:', qrCodeValue);
+  // Handle JSON QR data
+  let qrCodeValue = qr_code || ticket_number;
+  
+  if (qr_data && !qrCodeValue) {
+    try {
+      // Parse JSON QR data to extract ticket number
+      const parsedQR = JSON.parse(qr_data);
+      qrCodeValue = parsedQR.ticketNumber || parsedQR.ticket_number;
+      console.log('🔍 Parsed ticket number from QR data:', qrCodeValue);
+    } catch (e) {
+      console.log('🔍 Using raw QR data as ticket number:', qr_data);
+      qrCodeValue = qr_data;
+    }
+  }
+  
+  console.log('🔍 Final QR Code Value:', qrCodeValue);
   
   if (!qrCodeValue) {
     return res.status(400).json({ error: "QR code is required" });
@@ -1910,17 +1924,42 @@ export const getQRDetails = async (req, res) => {
 
 // 6️⃣ Mark Ticket as Used
 export const markTicketUsed = async (req, res) => {
-  const { ticket_number } = req.body;
+  console.log('🛠️ markTicketUsed called!');
+  console.log('🛠️ Request body:', req.body);
+  
+  const { ticket_number, qr_data, qr_code } = req.body;
+  
+  // Handle JSON QR data
+  let qrCodeValue = qr_code || ticket_number;
+  
+  if (qr_data && !qrCodeValue) {
+    try {
+      // Parse JSON QR data to extract ticket number
+      const parsedQR = JSON.parse(qr_data);
+      qrCodeValue = parsedQR.ticketNumber || parsedQR.ticket_number;
+      console.log('🛠️ Parsed ticket number from QR data:', qrCodeValue);
+    } catch (e) {
+      console.log('🛠️ Using raw QR data as ticket number:', qr_data);
+      qrCodeValue = qr_data;
+    }
+  }
+  
+  console.log('🛠️ Final ticket number:', qrCodeValue);
+  
+  if (!qrCodeValue) {
+    return res.status(400).json({ error: "Ticket number is required" });
+  }
+  
   try {
     const updateResult = await query(`
       UPDATE qr_codes
       SET is_used = true, used_at = NOW()
       WHERE ticket_number = $1 AND is_used = false
       RETURNING *
-    `, [ticket_number]);
+    `, [qrCodeValue]);
 
     if (updateResult.rows.length === 0) {
-      const existingQr = await query('SELECT is_used FROM qr_codes WHERE ticket_number = $1', [ticket_number]);
+      const existingQr = await query('SELECT is_used FROM qr_codes WHERE ticket_number = $1', [qrCodeValue]);
       if (existingQr.rows.length > 0 && existingQr.rows[0].is_used) {
         return res.status(400).json({ error: "Ticket already used" });
       }
@@ -1934,8 +1973,9 @@ export const markTicketUsed = async (req, res) => {
       INSERT INTO qr_scans (booking_id, ticket_number, used_at)
       VALUES ($1, $2, NOW())
       ON CONFLICT (ticket_number) DO NOTHING
-    `, [qrCode.booking_id, ticket_number]);
+    `, [qrCode.booking_id, qrCodeValue]);
 
+    console.log('✅ Ticket marked as used successfully');
     res.status(200).json({ success: true, message: "Ticket marked as used" });
   } catch (err) {
     console.error("Error in markTicketUsed:", err);
