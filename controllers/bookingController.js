@@ -254,16 +254,18 @@ export const createBooking = async (req, res) => {
   }
 
   // 📅 EVENT DATE VALIDATION
-  // Season dates: September 23, 2025 to October 1, 2025 (8 days)
-  const seasonStart = new Date('2025-09-23');
+  // Updated booking period: September 20, 2025 to October 1, 2025 (extended to allow current date)
+  // Season event dates: September 23, 2025 to October 1, 2025 (8 days)
+  const bookingStart = new Date('2025-09-20'); // Allow bookings from current date
+  const seasonStart = new Date('2025-09-23');  // Actual event start
   const seasonEnd = new Date('2025-10-01');
   
-  // Validate booking date is within event period
-  if (parsedDate < seasonStart || parsedDate > seasonEnd) {
+  // Validate booking date is within extended booking period
+  if (parsedDate < bookingStart || parsedDate > seasonEnd) {
     return res.status(400).json({
       success: false,
       error: "Invalid booking_date",
-      message: `❌ Bookings are only allowed for dates between ${seasonStart.toDateString()} and ${seasonEnd.toDateString()}. Selected date: ${parsedDate.toDateString()}`
+      message: `❌ Bookings are only allowed for dates between ${bookingStart.toDateString()} and ${seasonEnd.toDateString()}. Selected date: ${parsedDate.toDateString()}`
     });
   }
   
