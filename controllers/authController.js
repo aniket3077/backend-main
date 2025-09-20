@@ -57,8 +57,8 @@ exports.login = async (req, res) => {
           email: demoUser.email, 
           role: demoUser.role 
         },
-        process.env.JWT_SECRET || 'dandiya-secret-key',
-        { expiresIn: '24h' }
+        process.env.JWT_SECRET || 'malang_dandiya_2025_fallback_secret',
+        { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
       );
 
       return res.json({
@@ -111,8 +111,8 @@ exports.login = async (req, res) => {
           email: user.email, 
           role: user.role 
         },
-        process.env.JWT_SECRET || 'dandiya-secret-key',
-        { expiresIn: '24h' }
+        process.env.JWT_SECRET || 'malang_dandiya_2025_fallback_secret',
+        { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
       );
 
       return res.json({
@@ -160,7 +160,7 @@ exports.verifyToken = (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dandiya-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'malang_dandiya_2025_fallback_secret');
     req.user = decoded;
     next();
   } catch (error) {
