@@ -1878,6 +1878,8 @@ export const getQRDetails = async (req, res) => {
   }
   
   try {
+    console.log('🔍 About to execute query with ticket number:', qrCodeValue);
+    
     // Simple query first to test
     const qrResult = await query(`
       SELECT qr.*, b.pass_type, u.name as user_name
@@ -1887,7 +1889,8 @@ export const getQRDetails = async (req, res) => {
       WHERE qr.ticket_number = $1
     `, [qrCodeValue]);
 
-    console.log('🔍 Query result rows:', qrResult.rows.length);
+    console.log('🔍 Query executed successfully. Result rows:', qrResult.rows.length);
+    console.log('🔍 First row (if any):', qrResult.rows[0]);
 
     if (qrResult.rows.length === 0) {
       console.log('❌ Ticket not found for:', qrCodeValue);
@@ -1899,8 +1902,8 @@ export const getQRDetails = async (req, res) => {
     // Convert BigInt fields to strings for JSON serialization
     const ticketResponse = {
       ...qrCode,
-      id: qrCode.id.toString(),
-      booking_id: qrCode.booking_id.toString(),
+      id: qrCode.id ? qrCode.id.toString() : null,
+      booking_id: qrCode.booking_id ? qrCode.booking_id.toString() : null,
       user_id: qrCode.user_id ? qrCode.user_id.toString() : null,
       // Add fields expected by QR verifier
       success: true,
@@ -1908,7 +1911,8 @@ export const getQRDetails = async (req, res) => {
       guest_name: qrCode.user_name
     };
 
-    console.log('✅ Ticket found, returning response');
+    console.log('✅ Ticket found, preparing response');
+    console.log('✅ Response data:', JSON.stringify(ticketResponse));
     res.status(200).json({ 
       success: true, 
       ticket: ticketResponse,
@@ -1918,7 +1922,9 @@ export const getQRDetails = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in getQRDetails:", err);
-    res.status(500).json({ error: "Failed to get QR details" });
+    console.error("Error message:", err.message);
+    console.error("Error stack:", err.stack);
+    res.status(500).json({ error: "Failed to get QR details", details: err.message });
   }
 };
 
