@@ -159,6 +159,25 @@ app.post('/api/bookings/mark-used', async (req, res) => {
   }
 });
 
+// Mobile app QR endpoints (aliases for the booking endpoints)
+app.post('/api/qr/verify', async (req, res) => {
+  try {
+    await bookingController.getQRDetails(req, res);
+  } catch (error) {
+    console.error('QR verify error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/qr/mark-used', async (req, res) => {
+  try {
+    await bookingController.markTicketUsed(req, res);
+  } catch (error) {
+    console.error('QR mark used error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Test WhatsApp endpoint
 app.post('/api/bookings/test-whatsapp', async (req, res) => {
   try {
