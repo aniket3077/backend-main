@@ -139,6 +139,26 @@ app.post('/api/bookings/confirm-payment', async (req, res) => {
   }
 });
 
+// QR verification details endpoint
+app.post('/api/bookings/qr-details', async (req, res) => {
+  try {
+    await bookingController.getQRDetails(req, res);
+  } catch (error) {
+    console.error('QR details error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Mark ticket as used endpoint
+app.post('/api/bookings/mark-used', async (req, res) => {
+  try {
+    await bookingController.markTicketUsed(req, res);
+  } catch (error) {
+    console.error('Mark used error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Test WhatsApp endpoint
 app.post('/api/bookings/test-whatsapp', async (req, res) => {
   try {
