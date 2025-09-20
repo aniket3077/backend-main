@@ -172,6 +172,7 @@ export const createBooking = async (req, res) => {
   // Support both old format (num_tickets, pass_type) and new format (passes)
   let bookingPasses = {};
   let totalTickets = 0;
+  let bulkDiscountEligibleTickets = 0; // Only count individual male/female tickets for bulk discount
   
   if (passes && typeof passes === 'object') {
     // New format: multiple pass types with proper couple/family expansion
@@ -186,13 +187,22 @@ export const createBooking = async (req, res) => {
         console.log(`🎯 Expanding ${passCount} couple ticket(s) to ${passCount} male + ${passCount} female`);
         bookingPasses.male = (bookingPasses.male || 0) + passCount;
         bookingPasses.female = (bookingPasses.female || 0) + passCount;
+        // Couples don't count for bulk discount eligibility
+        console.log(`🚫 Couples excluded from bulk discount calculation`);
       } else if ((passType === 'family' || passType === 'family4') && passCount > 0) {
         // Each family ticket becomes 2 male + 2 female
         console.log(`🎯 Expanding ${passCount} family ticket(s) to ${passCount * 2} male + ${passCount * 2} female`);
         bookingPasses.male = (bookingPasses.male || 0) + (passCount * 2);
         bookingPasses.female = (bookingPasses.female || 0) + (passCount * 2);
+        // Family passes don't count for bulk discount eligibility
+        console.log(`🚫 Family passes excluded from bulk discount calculation`);
+      } else if (passType === 'male' || passType === 'female') {
+        // Individual male/female tickets - count for bulk discount
+        bookingPasses[passType] = (bookingPasses[passType] || 0) + passCount;
+        bulkDiscountEligibleTickets += passCount;
+        console.log(`✅ Individual ${passType} tickets count for bulk discount: +${passCount}`);
       } else {
-        // Regular tickets (male, female, kids, etc.) - add to existing count
+        // Regular tickets (kids, etc.) - add to existing count but don't count for bulk discount
         bookingPasses[passType] = (bookingPasses[passType] || 0) + passCount;
       }
     }
@@ -202,17 +212,24 @@ export const createBooking = async (req, res) => {
     console.log('🎟️ Pass expansion result:', {
       original: passes,
       expanded: bookingPasses,
-      totalTickets: totalTickets
+      totalTickets: totalTickets,
+      bulkDiscountEligibleTickets: bulkDiscountEligibleTickets
     });
     
     // Log the couple ticket conversion for tracking
     if (passes.couple) {
-      console.log(`🎯 Couple ticket conversion: ${passes.couple} couple tickets converted to ${bookingPasses.male} male + ${bookingPasses.female} female tickets`);
+      console.log(`🎯 Couple ticket conversion: ${passes.couple} couple tickets converted to ${bookingPasses.male} male + ${bookingPasses.female} female tickets (couples excluded from bulk discount)`);
     }
   } else if (num_tickets && pass_type) {
     // Old format: single pass type (backward compatibility)
     bookingPasses = { [pass_type]: Number(num_tickets) };
     totalTickets = Number(num_tickets);
+    // For old format, only male/female individual tickets count for bulk discount
+    if (pass_type === 'male' || pass_type === 'female') {
+      bulkDiscountEligibleTickets = Number(num_tickets);
+    } else {
+      bulkDiscountEligibleTickets = 0;
+    }
   }
   
   // Auto-set ticket quantities based on pass type
@@ -363,9 +380,10 @@ export const createBooking = async (req, res) => {
         // Multi-pass booking: calculate total for all pass types
         console.log('🎟️ Multi-pass booking detected, calculating total for all pass types:', passes);
         
-        // 🎯 Check total tickets for bulk discount eligibility (6+ tickets = ₹350 each)
-        const isBulkDiscount = totalTickets >= 6;
-        console.log(`🧮 Total tickets: ${totalTickets}, Bulk discount eligible: ${isBulkDiscount}`);
+        // 🎯 Check individual male/female tickets for bulk discount eligibility (6+ tickets = ₹350 each)
+        // Couples and family passes are excluded from bulk discount
+        const isBulkDiscount = bulkDiscountEligibleTickets >= 6;
+        console.log(`🧮 Total tickets: ${totalTickets}, Individual male/female tickets: ${bulkDiscountEligibleTickets}, Bulk discount eligible: ${isBulkDiscount}`);
         
         let passDetailsArray = [];
         Object.entries(passes).forEach(([passType, count]) => {
@@ -373,8 +391,8 @@ export const createBooking = async (req, res) => {
           if (passCount <= 0) return;
           
           let passCalc;
-          if (isBulkDiscount) {
-            // Apply bulk discount: ₹350 per ticket regardless of pass type
+          if (isBulkDiscount && (passType === 'male' || passType === 'female')) {
+            // Apply bulk discount only to individual male/female tickets: ₹350 per ticket
             const pricing = TICKET_PRICING[finalTicketType]?.[passType];
             const basePrice = pricing ? pricing.base : 0;
             
@@ -388,11 +406,15 @@ export const createBooking = async (req, res) => {
               discountAmount: (basePrice - 350) * passCount
             };
             
-            console.log(`   ${passType}: ₹350 × ${passCount} = ₹${passCalc.totalAmount} (Bulk discount applied, saved ₹${passCalc.discountAmount})`);
+            console.log(`   ${passType}: ₹350 × ${passCount} = ₹${passCalc.totalAmount} (Bulk discount applied to individual tickets, saved ₹${passCalc.discountAmount})`);
           } else {
-            // Normal pricing
+            // Normal pricing for couples, family, and other pass types (no bulk discount)
             passCalc = calculateTicketPrice(passType, finalTicketType, passCount);
-            console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
+            if (passType === 'couple' && isBulkDiscount) {
+              console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount} (Couples excluded from bulk discount)`);
+            } else {
+              console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
+            }
           }
           
           if (passCalc && typeof passCalc.totalAmount === 'number') {
