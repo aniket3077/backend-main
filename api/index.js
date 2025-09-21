@@ -178,6 +178,61 @@ app.post('/api/qr/mark-used', async (req, res) => {
   }
 });
 
+// Test date processing for QR generation
+app.post('/api/test-date-processing', async (req, res) => {
+  try {
+    const { booking_date } = req.body;
+    
+    if (!booking_date) {
+      return res.status(400).json({ error: 'booking_date is required' });
+    }
+    
+    console.log('🔍 Testing date processing for:', booking_date);
+    
+    // Store the original date string for QR generation (to avoid timezone conversion)
+    const originalDateString = booking_date.includes('T') ? booking_date.slice(0, 10) : booking_date;
+    
+    // Parse and validate date with proper timezone handling
+    let parsedDate;
+    if (booking_date.includes('T')) {
+      parsedDate = new Date(booking_date);
+    } else {
+      parsedDate = new Date(booking_date + 'T00:00:00.000Z');
+    }
+    
+    // Simulate QR generation date extraction
+    let eventDateForQR;
+    if (typeof parsedDate.toISOString === 'function') {
+      eventDateForQR = parsedDate.toISOString().slice(0, 10);
+    } else {
+      eventDateForQR = originalDateString;
+    }
+    
+    // Test QR data
+    const qrData = {
+      ticketNumber: "TEST-" + Date.now(),
+      bookingId: "TEST",
+      passType: "female",
+      eventDate: eventDateForQR
+    };
+    
+    res.json({
+      success: true,
+      input: {
+        booking_date,
+        originalDateString,
+        parsedDate: parsedDate.toISOString()
+      },
+      qrData,
+      demonstration: `Input "${booking_date}" → QR shows "${eventDateForQR}"`
+    });
+    
+  } catch (error) {
+    console.error('Date test error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Create test QR code for mobile app testing
 app.post('/api/qr/create-test', async (req, res) => {
   try {

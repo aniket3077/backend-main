@@ -49,8 +49,18 @@ function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = nu
   const basePrice = pricing.base;
   
   // � September 23rd Special Pricing
-  const isSeptember23 = bookingDate === '2025-09-23' || 
-                        (bookingDate && new Date(bookingDate).toISOString().slice(0, 10) === '2025-09-23');
+  const isSeptember23 = (() => {
+    if (!bookingDate) return false;
+    
+    // Handle date-only format (2025-09-23)
+    if (typeof bookingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(bookingDate)) {
+      return bookingDate === '2025-09-23';
+    }
+    
+    // Handle datetime format with UTC conversion
+    const date = new Date(bookingDate);
+    return date.toISOString().slice(0, 10) === '2025-09-23';
+  })();
   
   let finalPricePerTicket = basePrice;
   let discountApplied = false;
@@ -58,15 +68,20 @@ function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = nu
   
   if (isSeptember23 && ticketType === 'single') {
     if (passType === 'female') {
-      // Female tickets are FREE on September 23rd
-      finalPricePerTicket = 0;
+      // Female tickets are ₹1 on September 23rd
+      finalPricePerTicket = 1;
       discountApplied = true;
-      discountAmount = basePrice * quantity;
+      discountAmount = (basePrice - 1) * quantity;
     } else if (passType === 'couple') {
       // Couple tickets are ₹299 on September 23rd
       finalPricePerTicket = 299;
       discountApplied = true;
       discountAmount = (basePrice - 299) * quantity;
+    } else if (passType === 'male') {
+      // Male tickets are ₹249 on September 23rd
+      finalPricePerTicket = 249;
+      discountApplied = true;
+      discountAmount = (basePrice - 249) * quantity;
     }
   } else if (quantity >= 6) {
     // 🎯 Bulk discount: 6+ tickets = ₹350 each (only when not September 23rd special pricing)
@@ -190,6 +205,7 @@ export const createBooking = async (req, res) => {
   let bookingPasses = {};
   let totalTickets = 0;
   let bulkDiscountEligibleTickets = 0; // Only count individual male/female tickets for bulk discount
+  let finalPassType = pass_type; // For database storage - will be updated for new format
   
   if (passes && typeof passes === 'object') {
     // New format: multiple pass types with proper couple/family expansion
@@ -266,19 +282,40 @@ export const createBooking = async (req, res) => {
   }
   
   // Validate required fields
-
-  if (!booking_date || !pass_type) {
+  // Support both legacy format (pass_type) and new multi-pass format (passes)
+  const hasLegacyFormat = pass_type;
+  const hasNewFormat = passes && typeof passes === 'object' && Object.keys(passes).some(key => passes[key] > 0);
+  
+  if (!booking_date || (!hasLegacyFormat && !hasNewFormat)) {
     return res.status(400).json({
       success: false,
       error: "Missing required fields",
-      message: "booking_date and pass_type are required"
-
-  
+      message: "booking_date and either pass_type or passes are required"
     });
   }
 
-  // Parse and validate date
-  const parsedDate = new Date(booking_date);
+  console.log('🔍 DEBUG: Raw booking_date from frontend:', booking_date);
+  
+  // Store the original date string EXACTLY as received from frontend
+  const originalDateString = booking_date.includes('T') ? booking_date.slice(0, 10) : booking_date;
+  console.log('🔍 DEBUG: Preserved original date string:', originalDateString);
+  
+  // Parse and validate date with proper timezone handling
+  let parsedDate;
+  if (booking_date.includes('T')) {
+    // If booking_date includes time, parse directly
+    parsedDate = new Date(booking_date);
+    console.log('🔍 DEBUG: Parsed as datetime:', parsedDate.toISOString());
+  } else {
+    // If booking_date is just a date (YYYY-MM-DD), parse as UTC to avoid timezone issues
+    parsedDate = new Date(booking_date + 'T00:00:00.000Z');
+    console.log('🔍 DEBUG: Parsed as date-only with UTC:', parsedDate.toISOString());
+    console.log('🔍 DEBUG: Date part only:', parsedDate.toISOString().slice(0, 10));
+  }
+  
+  // CRITICAL: Always use originalDateString for QR generation, never rely on Date conversion
+  console.log('🔍 DEBUG: Will use this date in QR:', originalDateString);
+  
   if (isNaN(parsedDate.getTime())) {
     return res.status(400).json({
       success: false,
@@ -290,12 +327,17 @@ export const createBooking = async (req, res) => {
   // 📅 EVENT DATE VALIDATION
   // Updated booking period: September 20, 2025 to October 1, 2025 (extended to allow current date)
   // Season event dates: September 23, 2025 to October 1, 2025 (9 days including Sep 24)
-  const bookingStart = new Date('2025-09-20'); // Allow bookings from current date
-  const seasonStart = new Date('2025-09-23');  // Actual event start
-  const seasonEnd = new Date('2025-10-01');    // Event end date
+  const bookingStart = new Date('2025-09-20T00:00:00.000Z'); // Allow bookings from current date
+  const seasonStart = new Date('2025-09-23T00:00:00.000Z');  // Actual event start
+  const seasonEnd = new Date('2025-10-01T00:00:00.000Z');    // Event end date
+  
+  // For comparison, use date-only comparison to avoid timezone issues
+  const parsedDateOnly = new Date(parsedDate.toISOString().split('T')[0] + 'T00:00:00.000Z');
+  const bookingStartOnly = new Date('2025-09-20T00:00:00.000Z');
+  const seasonEndOnly = new Date('2025-10-01T00:00:00.000Z');
   
   // Validate booking date is within extended booking period
-  if (parsedDate < bookingStart || parsedDate > seasonEnd) {
+  if (parsedDateOnly < bookingStartOnly || parsedDateOnly > seasonEndOnly) {
     return res.status(400).json({
       success: false,
       error: "Invalid booking_date",
@@ -467,13 +509,40 @@ export const createBooking = async (req, res) => {
           bulkDiscount: isBulkDiscount
         };
         
+      } else if (passes && typeof passes === 'object') {
+        // Single pass type booking using new format
+        const activePassTypes = Object.entries(passes).filter(([key, count]) => (Number(count) || 0) > 0);
+        if (activePassTypes.length === 1) {
+          const [singlePassType, singlePassCount] = activePassTypes[0];
+          console.log(`🎟️ Single pass type booking: ${singlePassType} × ${singlePassCount}`);
+          
+          // Use singlePassType for calculation and later assign to finalPassType for database storage
+          finalPassType = singlePassType;
+          
+          priceInfo = calculateTicketPrice(singlePassType, finalTicketType, singlePassCount, booking_date);
+          
+          // Validate pricing calculation result
+          if (!priceInfo || typeof priceInfo.totalAmount !== 'number') {
+            throw new Error(`Invalid pricing calculation for ${singlePassType} ${finalTicketType}`);
+          }
+          
+          // Extract and validate values from priceInfo
+          totalAmount = priceInfo.totalAmount;
+          pricePerTicket = priceInfo.pricePerTicket;
+          discountApplied = priceInfo.discountApplied || false;
+          
+          console.log(`🧮 Single-pass total: ₹${totalAmount} (${singlePassType} ${finalTicketType})`);
+        } else {
+          throw new Error(`Invalid passes configuration: expected 1 active pass type, got ${activePassTypes.length}`);
+        }
+        
       } else {
-        // Single pass type booking (legacy path)
+        // Legacy single pass type booking
         priceInfo = calculateTicketPrice(pass_type, finalTicketType, finalTicketCount, booking_date);
         
         // Validate pricing calculation result
         if (!priceInfo || typeof priceInfo.totalAmount !== 'number') {
-          throw new Error(`Invalid pricing calculation for ${pass_type} ${ticket_type}`);
+          throw new Error(`Invalid pricing calculation for ${pass_type} ${finalTicketType}`);
         }
         
         // Extract and validate values from priceInfo
@@ -486,16 +555,17 @@ export const createBooking = async (req, res) => {
       }
       
       // Additional validation checks
-      if (totalAmount <= 0) {
+      if (totalAmount < 0) {
         throw new Error('Invalid total amount calculated');
       }
       
-      if (pricePerTicket <= 0) {
+      // Allow zero amount for special offers (like free female tickets on September 23rd)
+      if (pricePerTicket < 0) {
         throw new Error('Invalid price per ticket calculated');
       }
       
       console.log('✅ Pricing calculation successful:', {
-        pass_type,
+        pass_type: finalPassType,
         ticket_type,
         finalTicketCount,
         pricePerTicket,
@@ -539,7 +609,7 @@ export const createBooking = async (req, res) => {
     
     // Define pass details for JSON storage
     const passDetails = {
-      pass_type,
+      pass_type: finalPassType,
       ticket_type,
       num_tickets: finalTicketCount,
       price_per_ticket: pricePerTicket, // Individual ticket price
@@ -548,13 +618,14 @@ export const createBooking = async (req, res) => {
       total_amount: totalAmount,
       discount_amount: totalDiscount,
       discount_applied: discountApplied,
-      booking_date: parsedDate.toISOString()
+      booking_date: parsedDate.toISOString(),
+      original_date_string: originalDateString // Store original date for QR generation
     };
     
     console.log('🔄 Creating booking with params:', {
       booking_date: parsedDate,
       num_tickets: parseInt(finalTicketCount),
-      pass_type,
+      pass_type: finalPassType,
       ticket_type,
       total_amount: totalAmount,
       discount: totalDiscount,
@@ -606,10 +677,8 @@ export const createBooking = async (req, res) => {
       RETURNING *
     `, [
       parsedDate, 
-
       parseInt(finalTicketCount), 
-      pass_type, 
-
+      finalPassType, 
       finalTicketType,
       'pending', 
       totalAmount, 
@@ -1084,11 +1153,21 @@ export const createPayment = async (req, res) => {
           // Recalculate amount from stored passes for validation
           if (passDetails.passes) {
             let recalculatedAmount = 0;
+            
+            // Use the original date string if available (avoids timezone issues)
+            let validationDate = passDetails.details?.original_date_string || booking.booking_date;
+            if (validationDate && typeof validationDate !== 'string') {
+              // Convert Date object to YYYY-MM-DD format if needed
+              validationDate = validationDate.toISOString().split('T')[0];
+            } else if (validationDate && typeof validationDate === 'string' && validationDate.includes('T')) {
+              // Convert datetime string to date-only format if needed
+              validationDate = validationDate.split('T')[0];
+            }
             Object.entries(passDetails.passes).forEach(([passType, count]) => {
               const passCount = Number(count) || 0;
               if (passCount <= 0) return;
               
-              const passCalc = calculateTicketPrice(passType, booking.ticket_type, passCount, booking.booking_date);
+              const passCalc = calculateTicketPrice(passType, booking.ticket_type, passCount, validationDate);
               if (passCalc && typeof passCalc.totalAmount === 'number') {
                 recalculatedAmount += passCalc.totalAmount;
                 console.log(`  ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
@@ -1155,8 +1234,8 @@ export const createPayment = async (req, res) => {
               console.log('  Backend calculated:', computedAmount);
               console.log('  Stored passes:', passDetails.passes);
               
-              // If the expected amount is reasonable (between 99 and 10000), use it
-              if (expectedTotal >= 99 && expectedTotal <= 10000) {
+              // If the expected amount is reasonable (between 1 and 10000), use it
+              if (expectedTotal >= 1 && expectedTotal <= 10000) {
                 console.log('✅ Using frontend expected amount as it appears valid');
                 computedAmount = expectedTotal;
                 
@@ -1449,17 +1528,101 @@ export const confirmPayment = async (req, res) => {
         
         let qrCodeUrl;
         try {
+          console.log('🔍 DEBUG QR Generation:');
+          console.log('🔍 booking.booking_date type:', typeof booking.booking_date);
+          console.log('🔍 booking.booking_date value:', booking.booking_date);
+          
+          // Extract original date from pass_details if available, otherwise fall back to conversion
+          let eventDateForQR;
+          console.log('🔍 DEBUG QR Date - pass_details exists:', !!booking.pass_details);
+          if (booking.pass_details) {
+            try {
+              const passDetailsObj = typeof booking.pass_details === 'string' 
+                ? JSON.parse(booking.pass_details) 
+                : booking.pass_details;
+              
+              console.log('🔍 DEBUG QR Date - passDetailsObj structure:', JSON.stringify(passDetailsObj, null, 2));
+              
+              // Check if original_date_string is in details sub-object
+              if (passDetailsObj.details && passDetailsObj.details.original_date_string) {
+                eventDateForQR = passDetailsObj.details.original_date_string;
+                console.log('🔍 SUCCESS: Using original_date_string from pass_details.details:', eventDateForQR);
+              } else if (passDetailsObj.original_date_string) {
+                eventDateForQR = passDetailsObj.original_date_string;
+                console.log('🔍 SUCCESS: Using original_date_string from pass_details:', eventDateForQR);
+              } else {
+                console.log('🔍 WARNING: original_date_string not found in pass_details');
+                console.log('🔍 DEBUG: passDetailsObj.details exists:', !!passDetailsObj.details);
+                if (passDetailsObj.details) {
+                  console.log('🔍 DEBUG: passDetailsObj.details keys:', Object.keys(passDetailsObj.details));
+                }
+              }
+            } catch (e) {
+              console.log('🔍 ERROR: Failed to parse pass_details:', e.message);
+              console.log('🔍 DEBUG: Raw pass_details:', booking.pass_details);
+            }
+          }
+          
+          // Fallback to safe date extraction if original_date_string not available
+          if (!eventDateForQR) {
+            if (typeof booking.booking_date === 'string') {
+              eventDateForQR = booking.booking_date.slice(0, 10);
+            } else {
+              eventDateForQR = booking.booking_date.toISOString().slice(0, 10);
+            }
+            console.log('🔍 Using fallback date extraction:', eventDateForQR);
+          }
+          
+          console.log('🔍 Final eventDate for QR:', eventDateForQR);
+          
           const qrData = {
             ticketNumber,
             bookingId: booking.id.toString(),
             passType: ticketPassType, // Use individual pass type
-            eventDate: booking.booking_date.toISOString()
+            eventDate: eventDateForQR
           };
+          
+          console.log('🔍 DEBUG Final QR Data:', JSON.stringify(qrData));
           qrCodeUrl = await generateQRCode(JSON.stringify(qrData));
         } catch (qrError) {
           console.error('QR generation failed, using fallback URL:', qrError);
           qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${ticketNumber}`;
         }
+        
+        console.log('🔍 DEBUG QR Database Insert:');
+        console.log('🔍 booking.booking_date for DB:', booking.booking_date);
+        
+        // Extract original date from pass_details if available
+        let eventDateForQR;
+        if (booking.pass_details) {
+          try {
+            const passDetailsObj = typeof booking.pass_details === 'string' 
+              ? JSON.parse(booking.pass_details) 
+              : booking.pass_details;
+            
+            // Check if original_date_string is in details sub-object
+            if (passDetailsObj.details && passDetailsObj.details.original_date_string) {
+              eventDateForQR = passDetailsObj.details.original_date_string;
+              console.log('🔍 Using original_date_string from pass_details.details:', eventDateForQR);
+            } else if (passDetailsObj.original_date_string) {
+              eventDateForQR = passDetailsObj.original_date_string;
+              console.log('🔍 Using original_date_string from pass_details:', eventDateForQR);
+            }
+          } catch (e) {
+            console.log('🔍 Failed to parse pass_details, using fallback:', e.message);
+          }
+        }
+        
+        // Fallback to safe date extraction
+        if (!eventDateForQR) {
+          if (typeof booking.booking_date === 'string') {
+            eventDateForQR = booking.booking_date.slice(0, 10);
+          } else {
+            eventDateForQR = booking.booking_date.toISOString().slice(0, 10);
+          }
+          console.log('🔍 Using fallback date extraction:', eventDateForQR);
+        }
+        console.log('🔍 Final eventDate for QR:', eventDateForQR);
         
         const qrResult = await query(`
           INSERT INTO qr_codes (booking_id, user_id, ticket_number, qr_data, qr_code_url, expiry_date, is_used)
@@ -1469,7 +1632,12 @@ export const confirmPayment = async (req, res) => {
           booking.id, 
           booking.users[0]?.id, 
           ticketNumber, 
-          JSON.stringify({ ticketNumber, bookingId: booking.id.toString(), passType: ticketPassType, eventDate: booking.booking_date.toISOString() }),
+          JSON.stringify({ 
+            ticketNumber, 
+            bookingId: booking.id.toString(), 
+            passType: ticketPassType, 
+            eventDate: eventDateForQR
+          }),
           qrCodeUrl, 
           new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
           false
@@ -1901,16 +2069,21 @@ export const getQRDetails = async (req, res) => {
     // Enhanced query to also verify event date if provided
     let qrResult;
     if (eventDate) {
-      // Query with both ticket number and event date verification
+      // Parse dates to compare just the date parts (not time)
+      const qrEventDate = new Date(eventDate);
+      const qrDateString = qrEventDate.toISOString().slice(0, 10); // Get YYYY-MM-DD format
+      
+      // Query with both ticket number and date comparison using just the date part
       qrResult = await query(`
         SELECT qr.*, b.pass_type, b.booking_date, u.name as user_name
         FROM qr_codes qr
         LEFT JOIN bookings b ON qr.booking_id = b.id
         LEFT JOIN users u ON qr.user_id = u.id
-        WHERE qr.ticket_number = $1 AND b.booking_date = $2
-      `, [qrCodeValue, eventDate]);
+        WHERE qr.ticket_number = $1 AND DATE(b.booking_date) = $2
+      `, [qrCodeValue, qrDateString]);
       
       console.log('🔍 Query with ticket number and event date - Result rows:', qrResult.rows.length);
+      console.log('🔍 Comparing QR date:', qrDateString, 'with database booking_date');
       
       if (qrResult.rows.length === 0) {
         // Try without date as fallback
@@ -2014,7 +2187,11 @@ export const markTicketUsed = async (req, res) => {
   try {
     let updateResult;
     if (eventDate) {
-      // Update with event date verification
+      // Parse dates to compare just the date parts (not time)
+      const qrEventDate = new Date(eventDate);
+      const qrDateString = qrEventDate.toISOString().slice(0, 10); // Get YYYY-MM-DD format
+      
+      // Update with event date verification using just the date part
       updateResult = await query(`
         UPDATE qr_codes
         SET is_used = true, used_at = NOW()
@@ -2022,11 +2199,12 @@ export const markTicketUsed = async (req, res) => {
         WHERE qr_codes.ticket_number = $1 
         AND qr_codes.is_used = false 
         AND qr_codes.booking_id = b.id 
-        AND b.booking_date = $2
+        AND DATE(b.booking_date) = $2
         RETURNING qr_codes.*
-      `, [qrCodeValue, eventDate]);
+      `, [qrCodeValue, qrDateString]);
       
       console.log('🛠️ Update with date verification - Affected rows:', updateResult.rows.length);
+      console.log('🛠️ Comparing QR date:', qrDateString, 'with database booking_date');
       
       if (updateResult.rows.length === 0) {
         // Check if ticket exists but with different date
@@ -2346,29 +2524,43 @@ export const validatePricingConsistencyEndpoint = async (req, res) => {
 export const createTestQR = async (req, res) => {
   try {
     const testTicketNumber = `TEST-${Date.now()}`;
-    const testBookingId = 999999; // Mock booking ID for testing
-    const testUserId = 1; // Mock user ID for testing
     
     console.log('🧪 Creating test QR code:', testTicketNumber);
     
-    // Create test QR code in database
-    const qrResult = await query(`
-      INSERT INTO qr_codes (booking_id, user_id, ticket_number, qr_data, qr_code_url, expiry_date, is_used)
+    // First, create a test booking record
+    const testBookingResult = await query(`
+      INSERT INTO bookings (booking_date, num_tickets, pass_type, ticket_type, total_amount, status, created_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `, [
-      testBookingId,
-      testUserId,
+      '2025-09-23T00:00:00.000Z', // booking_date
+      1, // num_tickets
+      'female', // pass_type
+      'single', // ticket_type
+      0, // total_amount (free for test)
+      'confirmed', // status
+      new Date() // created_at
+    ]);
+    
+    const testBooking = testBookingResult.rows[0];
+    console.log('🧪 Created test booking:', testBooking.id);
+    
+    // Create test QR code in database (without user_id since it might be optional)
+    const qrResult = await query(`
+      INSERT INTO qr_codes (booking_id, ticket_number, qr_data, qr_code_url, expiry_date, is_used)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [
+      testBooking.id,
       testTicketNumber,
       JSON.stringify({ 
         ticketNumber: testTicketNumber, 
-        bookingId: testBookingId.toString(), 
+        bookingId: testBooking.id.toString(), 
         passType: 'female', 
         eventDate: '2025-09-23T00:00:00.000Z' 
       }),
       `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${testTicketNumber}`,
-      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-      false
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
     ]);
     
     const testQR = qrResult.rows[0];
@@ -2380,6 +2572,7 @@ export const createTestQR = async (req, res) => {
         ticket_number: testQR.ticket_number,
         qr_data: testQR.qr_data,
         qr_code_url: testQR.qr_code_url,
+        booking_id: testBooking.id.toString(),
         instructions: 'Scan this QR code with your mobile app to test verification'
       }
     });
