@@ -39,7 +39,7 @@ const TICKET_PRICING = {
 };
 
 // Calculate ticket price with bulk discount (6+ tickets = ₹350 each)
-function calculateTicketPrice(passType, ticketType, numTickets) {
+function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = null) {
   const pricing = TICKET_PRICING[ticketType]?.[passType];
   if (!pricing) {
     throw new Error(`Invalid pricing for ${ticketType} ${passType}`);
@@ -48,12 +48,28 @@ function calculateTicketPrice(passType, ticketType, numTickets) {
   const quantity = Math.max(1, parseInt(numTickets));
   const basePrice = pricing.base;
   
-  // 🎯 Bulk discount: 6+ tickets = ₹350 each
+  // � September 23rd Special Pricing
+  const isSeptember23 = bookingDate === '2025-09-23' || 
+                        (bookingDate && new Date(bookingDate).toISOString().slice(0, 10) === '2025-09-23');
+  
   let finalPricePerTicket = basePrice;
   let discountApplied = false;
   let discountAmount = 0;
   
-  if (quantity >= 6) {
+  if (isSeptember23 && ticketType === 'single') {
+    if (passType === 'female') {
+      // Female tickets are FREE on September 23rd
+      finalPricePerTicket = 0;
+      discountApplied = true;
+      discountAmount = basePrice * quantity;
+    } else if (passType === 'couple') {
+      // Couple tickets are ₹299 on September 23rd
+      finalPricePerTicket = 299;
+      discountApplied = true;
+      discountAmount = (basePrice - 299) * quantity;
+    }
+  } else if (quantity >= 6) {
+    // 🎯 Bulk discount: 6+ tickets = ₹350 each (only when not September 23rd special pricing)
     finalPricePerTicket = 350;
     discountApplied = true;
     discountAmount = (basePrice - 350) * quantity;
@@ -69,7 +85,8 @@ function calculateTicketPrice(passType, ticketType, numTickets) {
     discountApplied: discountApplied,
     totalAmount: totalAmount,
     savings: savings,
-    discountAmount: discountAmount
+    discountAmount: discountAmount,
+    specialOffer: isSeptember23 ? 'September 23rd Special' : null
   };
 }
 
@@ -94,7 +111,7 @@ try {
 }
 
 // 💰 Enhanced pricing validation and calculation
-function computeTotalAmount(passType, quantity = 1, ticketType = 'single') {
+function computeTotalAmount(passType, quantity = 1, ticketType = 'single', bookingDate = null) {
   // Validate inputs
   if (!passType || typeof passType !== 'string') {
     throw new Error('Invalid pass type provided');
@@ -111,7 +128,7 @@ function computeTotalAmount(passType, quantity = 1, ticketType = 'single') {
   }
   
   const q = Math.max(1, parseInt(quantity || 1));
-  const calculation = calculateTicketPrice(cleanPassType, cleanTicketType, q);
+  const calculation = calculateTicketPrice(cleanPassType, cleanTicketType, q, bookingDate);
   
   // Return consistent pricing information
   return {
@@ -409,7 +426,7 @@ export const createBooking = async (req, res) => {
             console.log(`   ${passType}: ₹350 × ${passCount} = ₹${passCalc.totalAmount} (Bulk discount applied to individual tickets, saved ₹${passCalc.discountAmount})`);
           } else {
             // Normal pricing for couples, family, and other pass types (no bulk discount)
-            passCalc = calculateTicketPrice(passType, finalTicketType, passCount);
+            passCalc = calculateTicketPrice(passType, finalTicketType, passCount, booking_date);
             if (passType === 'couple' && isBulkDiscount) {
               console.log(`   ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount} (Couples excluded from bulk discount)`);
             } else {
@@ -452,7 +469,7 @@ export const createBooking = async (req, res) => {
         
       } else {
         // Single pass type booking (legacy path)
-        priceInfo = calculateTicketPrice(pass_type, finalTicketType, finalTicketCount);
+        priceInfo = calculateTicketPrice(pass_type, finalTicketType, finalTicketCount, booking_date);
         
         // Validate pricing calculation result
         if (!priceInfo || typeof priceInfo.totalAmount !== 'number') {
@@ -641,7 +658,7 @@ export const createBooking = async (req, res) => {
       console.log('⚠️ Database offline - creating mock booking');
       const mockBookingId = Date.now().toString();
 
-      const totalAmount = computeTotalAmount(pass_type, finalTicketCount) || 0;
+      const totalAmount = computeTotalAmount(pass_type, finalTicketCount, ticket_type, booking_date) || 0;
 
       
       const mockBooking = {
@@ -702,7 +719,7 @@ export const createBooking = async (req, res) => {
     if (isConnectionError) {
       console.log('⚠️ Database connection failed - creating mock booking');
       const mockBookingId = Date.now().toString();
-      const totalAmount = computeTotalAmount(pass_type, num_tickets) || 0;
+      const totalAmount = computeTotalAmount(pass_type, num_tickets, ticket_type, booking_date) || 0;
       
       const mockBooking = {
         id: mockBookingId,
@@ -964,7 +981,7 @@ export const testWhatsApp = async (req, res) => {
     
     // Calculate dynamic amount based on pass type for test
     const testPassType = passType || 'female';
-    const testPricing = calculateTicketPrice(testPassType, 'single', ticketCount);
+    const testPricing = calculateTicketPrice(testPassType, 'single', ticketCount, null);
     const testAmount = testPricing ? `₹${testPricing.totalAmount}` : '₹399';
     
     // Send single complete booking message (like the real booking flow)
@@ -1020,7 +1037,7 @@ export const createPayment = async (req, res) => {
     
     // Fetch booking to get complete pass details for accurate pricing
     const result = await query(`
-      SELECT pass_type, num_tickets, total_amount, pass_details, ticket_type FROM bookings WHERE id = $1
+      SELECT pass_type, num_tickets, total_amount, pass_details, ticket_type, booking_date FROM bookings WHERE id = $1
     `, [parseInt(booking_id)]);
     
     if (result.rows.length === 0) {
@@ -1071,7 +1088,7 @@ export const createPayment = async (req, res) => {
               const passCount = Number(count) || 0;
               if (passCount <= 0) return;
               
-              const passCalc = calculateTicketPrice(passType, booking.ticket_type, passCount);
+              const passCalc = calculateTicketPrice(passType, booking.ticket_type, passCount, booking.booking_date);
               if (passCalc && typeof passCalc.totalAmount === 'number') {
                 recalculatedAmount += passCalc.totalAmount;
                 console.log(`  ${passType}: ₹${passCalc.pricePerTicket} × ${passCount} = ₹${passCalc.totalAmount}`);
@@ -2042,7 +2059,7 @@ export const getPricingInfo = async (req, res) => {
       });
     }
 
-    const priceInfo = calculateTicketPrice(pass_type, ticket_type, parseInt(num_tickets));
+    const priceInfo = calculateTicketPrice(pass_type, ticket_type, parseInt(num_tickets), null);
     
     // Format response for frontend
     const response = {
