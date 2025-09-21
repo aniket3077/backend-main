@@ -1,5 +1,6 @@
 import express from 'express';
 import * as qrController from '../controllers/qrController.js';
+import { getMarkedTickets } from '../controllers/bookingController.js';
 
 const router = express.Router();
 
@@ -16,6 +17,9 @@ router.post('/mark-used', qrController.markQRUsed);
 
 // Get QR details (alias for verify)
 router.post('/details', qrController.getQRDetails);
+
+// Get all marked/scanned tickets with filtering
+router.get('/marked-tickets', getMarkedTickets);
 
 // Health check for QR service
 router.get('/health', (req, res) => {
