@@ -73,10 +73,10 @@ function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = nu
       discountApplied = true;
       discountAmount = (basePrice - 1) * quantity;
     } else if (passType === 'couple') {
-      // Couple tickets are ₹299 on September 23rd
-      finalPricePerTicket = 299;
+      // Couple tickets are ₹249 on September 23rd
+      finalPricePerTicket = 249;
       discountApplied = true;
-      discountAmount = (basePrice - 299) * quantity;
+      discountAmount = (basePrice - 249) * quantity;
     } else if (passType === 'male') {
       // Male tickets are ₹249 on September 23rd
       finalPricePerTicket = 249;
