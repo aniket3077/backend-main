@@ -1875,13 +1875,15 @@ export const getQRDetails = async (req, res) => {
   
   // Handle JSON QR data
   let qrCodeValue = qr_code || ticket_number;
+  let eventDate = null;
   
   if (qr_data && !qrCodeValue) {
     try {
-      // Parse JSON QR data to extract ticket number
+      // Parse JSON QR data to extract ticket number and event date
       const parsedQR = JSON.parse(qr_data);
       qrCodeValue = parsedQR.ticketNumber || parsedQR.ticket_number;
-      console.log('🔍 Parsed ticket number from QR data:', qrCodeValue);
+      eventDate = parsedQR.eventDate;
+      console.log('🔍 Parsed from QR data - Ticket:', qrCodeValue, 'Event Date:', eventDate);
     } catch (e) {
       console.log('🔍 Using raw QR data as ticket number:', qr_data);
       qrCodeValue = qr_data;
@@ -1889,22 +1891,60 @@ export const getQRDetails = async (req, res) => {
   }
   
   console.log('🔍 Final QR Code Value:', qrCodeValue);
+  console.log('🔍 Event Date from QR:', eventDate);
   
   if (!qrCodeValue) {
     return res.status(400).json({ error: "QR code is required" });
   }
   
   try {
-    // Simple query first to test
-    const qrResult = await query(`
-      SELECT qr.*, b.pass_type, u.name as user_name
-      FROM qr_codes qr
-      LEFT JOIN bookings b ON qr.booking_id = b.id
-      LEFT JOIN users u ON qr.user_id = u.id
-      WHERE qr.ticket_number = $1
-    `, [qrCodeValue]);
-
-    console.log('🔍 Query result rows:', qrResult.rows.length);
+    // Enhanced query to also verify event date if provided
+    let qrResult;
+    if (eventDate) {
+      // Query with both ticket number and event date verification
+      qrResult = await query(`
+        SELECT qr.*, b.pass_type, b.booking_date, u.name as user_name
+        FROM qr_codes qr
+        LEFT JOIN bookings b ON qr.booking_id = b.id
+        LEFT JOIN users u ON qr.user_id = u.id
+        WHERE qr.ticket_number = $1 AND b.booking_date = $2
+      `, [qrCodeValue, eventDate]);
+      
+      console.log('🔍 Query with ticket number and event date - Result rows:', qrResult.rows.length);
+      
+      if (qrResult.rows.length === 0) {
+        // Try without date as fallback
+        qrResult = await query(`
+          SELECT qr.*, b.pass_type, b.booking_date, u.name as user_name
+          FROM qr_codes qr
+          LEFT JOIN bookings b ON qr.booking_id = b.id
+          LEFT JOIN users u ON qr.user_id = u.id
+          WHERE qr.ticket_number = $1
+        `, [qrCodeValue]);
+        
+        console.log('🔍 Fallback query without date - Result rows:', qrResult.rows.length);
+        
+        if (qrResult.rows.length > 0) {
+          const foundTicket = qrResult.rows[0];
+          console.log('⚠️ Ticket found but date mismatch. Expected:', eventDate, 'Found:', foundTicket.booking_date);
+          return res.status(400).json({ 
+            error: "Event date mismatch", 
+            message: `Ticket is for ${foundTicket.booking_date}, but QR shows ${eventDate}` 
+          });
+        }
+      }
+    } else {
+      // Original query without date verification
+      qrResult = await query(`
+        SELECT qr.*, b.pass_type, b.booking_date, u.name as user_name
+        FROM qr_codes qr
+        LEFT JOIN bookings b ON qr.booking_id = b.id
+        LEFT JOIN users u ON qr.user_id = u.id
+        WHERE qr.ticket_number = $1
+      `, [qrCodeValue]);
+      
+      console.log('🔍 Query without date verification - Result rows:', qrResult.rows.length);
+    }
 
     if (qrResult.rows.length === 0) {
       console.log('❌ Ticket not found for:', qrCodeValue);
@@ -1912,6 +1952,7 @@ export const getQRDetails = async (req, res) => {
     }
 
     const qrCode = qrResult.rows[0];
+    console.log('✅ Ticket found and verified!');
 
     // Convert BigInt fields to strings for JSON serialization
     const ticketResponse = {
@@ -1948,13 +1989,15 @@ export const markTicketUsed = async (req, res) => {
   
   // Handle JSON QR data
   let qrCodeValue = qr_code || ticket_number;
+  let eventDate = null;
   
   if (qr_data && !qrCodeValue) {
     try {
-      // Parse JSON QR data to extract ticket number
+      // Parse JSON QR data to extract ticket number and event date
       const parsedQR = JSON.parse(qr_data);
       qrCodeValue = parsedQR.ticketNumber || parsedQR.ticket_number;
-      console.log('🛠️ Parsed ticket number from QR data:', qrCodeValue);
+      eventDate = parsedQR.eventDate;
+      console.log('🛠️ Parsed from QR data - Ticket:', qrCodeValue, 'Event Date:', eventDate);
     } catch (e) {
       console.log('🛠️ Using raw QR data as ticket number:', qr_data);
       qrCodeValue = qr_data;
@@ -1962,18 +2005,60 @@ export const markTicketUsed = async (req, res) => {
   }
   
   console.log('🛠️ Final ticket number:', qrCodeValue);
+  console.log('🛠️ Event Date from QR:', eventDate);
   
   if (!qrCodeValue) {
     return res.status(400).json({ error: "Ticket number is required" });
   }
   
   try {
-    const updateResult = await query(`
-      UPDATE qr_codes
-      SET is_used = true, used_at = NOW()
-      WHERE ticket_number = $1 AND is_used = false
-      RETURNING *
-    `, [qrCodeValue]);
+    let updateResult;
+    if (eventDate) {
+      // Update with event date verification
+      updateResult = await query(`
+        UPDATE qr_codes
+        SET is_used = true, used_at = NOW()
+        FROM bookings b
+        WHERE qr_codes.ticket_number = $1 
+        AND qr_codes.is_used = false 
+        AND qr_codes.booking_id = b.id 
+        AND b.booking_date = $2
+        RETURNING qr_codes.*
+      `, [qrCodeValue, eventDate]);
+      
+      console.log('🛠️ Update with date verification - Affected rows:', updateResult.rows.length);
+      
+      if (updateResult.rows.length === 0) {
+        // Check if ticket exists but with different date
+        const existingQr = await query(`
+          SELECT qr.is_used, b.booking_date
+          FROM qr_codes qr
+          LEFT JOIN bookings b ON qr.booking_id = b.id
+          WHERE qr.ticket_number = $1
+        `, [qrCodeValue]);
+        
+        if (existingQr.rows.length > 0) {
+          const ticket = existingQr.rows[0];
+          if (ticket.booking_date && ticket.booking_date !== eventDate) {
+            console.log('⚠️ Date mismatch. Expected:', eventDate, 'Found:', ticket.booking_date);
+            return res.status(400).json({ 
+              error: "Event date mismatch", 
+              message: `Ticket is for ${ticket.booking_date}, but QR shows ${eventDate}` 
+            });
+          }
+        }
+      }
+    } else {
+      // Original update without date verification
+      updateResult = await query(`
+        UPDATE qr_codes
+        SET is_used = true, used_at = NOW()
+        WHERE ticket_number = $1 AND is_used = false
+        RETURNING *
+      `, [qrCodeValue]);
+      
+      console.log('🛠️ Update without date verification - Affected rows:', updateResult.rows.length);
+    }
 
     if (updateResult.rows.length === 0) {
       const existingQr = await query('SELECT is_used FROM qr_codes WHERE ticket_number = $1', [qrCodeValue]);
