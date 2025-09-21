@@ -178,6 +178,16 @@ app.post('/api/qr/mark-used', async (req, res) => {
   }
 });
 
+// Create test QR code for mobile app testing
+app.post('/api/qr/create-test', async (req, res) => {
+  try {
+    await bookingController.createTestQR(req, res);
+  } catch (error) {
+    console.error('Create test QR error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Test WhatsApp endpoint
 app.post('/api/bookings/test-whatsapp', async (req, res) => {
   try {
@@ -341,6 +351,7 @@ app.use((req, res) => {
       markUsed: 'POST /api/bookings/mark-used',
       qrVerify: 'POST /api/qr/verify',
       qrMarkUsed: 'POST /api/qr/mark-used',
+      createTestQR: 'POST /api/qr/create-test',
       testWhatsApp: 'POST /api/bookings/test-whatsapp',
       getPricing: 'GET /api/bookings/pricing',
       whatsappConfig: 'GET /api/config/whatsapp',

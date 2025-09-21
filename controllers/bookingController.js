@@ -2256,3 +2256,55 @@ export const validatePricingConsistencyEndpoint = async (req, res) => {
     });
   }
 };
+
+// 🧪 Create Test QR Code for Mobile App Testing
+export const createTestQR = async (req, res) => {
+  try {
+    const testTicketNumber = `TEST-${Date.now()}`;
+    const testBookingId = 999999; // Mock booking ID for testing
+    const testUserId = 1; // Mock user ID for testing
+    
+    console.log('🧪 Creating test QR code:', testTicketNumber);
+    
+    // Create test QR code in database
+    const qrResult = await query(`
+      INSERT INTO qr_codes (booking_id, user_id, ticket_number, qr_data, qr_code_url, expiry_date, is_used)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `, [
+      testBookingId,
+      testUserId,
+      testTicketNumber,
+      JSON.stringify({ 
+        ticketNumber: testTicketNumber, 
+        bookingId: testBookingId.toString(), 
+        passType: 'female', 
+        eventDate: '2025-09-23T00:00:00.000Z' 
+      }),
+      `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${testTicketNumber}`,
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+      false
+    ]);
+    
+    const testQR = qrResult.rows[0];
+    
+    res.json({
+      success: true,
+      message: 'Test QR code created successfully',
+      testQR: {
+        ticket_number: testQR.ticket_number,
+        qr_data: testQR.qr_data,
+        qr_code_url: testQR.qr_code_url,
+        instructions: 'Scan this QR code with your mobile app to test verification'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error creating test QR:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create test QR code',
+      details: error.message
+    });
+  }
+};
