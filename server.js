@@ -165,6 +165,8 @@ bookingRoutes.post("/confirm-payment", bookingController.confirmPayment);
 bookingRoutes.post("/qr-details", bookingController.getQRDetails);
 bookingRoutes.post("/mark-used", bookingController.markTicketUsed);
 bookingRoutes.post("/resend-notifications", bookingController.resendNotifications);
+bookingRoutes.get("/pricing", bookingController.getPricingInfo);
+bookingRoutes.get("/marked-tickets", bookingController.getMarkedTickets);
 
 // Test endpoints for debugging PDF/email/WhatsApp issues
 bookingRoutes.post("/test-email", async (req, res) => {
@@ -435,6 +437,8 @@ app.use((req, res) => {
       'POST /api/bookings/qr-details',
       'POST /api/bookings/mark-used',
       'POST /api/bookings/resend-notifications',
+      'GET /api/bookings/pricing',
+      'GET /api/bookings/marked-tickets',
       'POST /api/bookings/test-email',
       'POST /api/bookings/test-whatsapp',
       'POST /api/bookings/test-database',
