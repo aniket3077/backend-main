@@ -686,7 +686,7 @@ export const generateDandiyaTicketPDF = async (bookingData) => {
           ticket_type: bookingData.ticket_type || 'single',
           qrCode: ticket.qrCode,
           booking_id: bookingData.id,
-          ticket_number: ticket.id,
+          ticket_number: ticket.ticket_number,
           venue: bookingData.venue || 'Regal Lawns, Beed Bypass'
         }));
         
