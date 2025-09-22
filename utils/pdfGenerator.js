@@ -267,7 +267,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
 
 // Helper function to generate a single ticket page
 async function generateSingleTicketPage(doc, ticketData) {
-  const { name, date, pass_type, ticket_type, qrCode, booking_id, ticket_number, venue, passTypeColors } = ticketData;
+  const { name, date, pass_type, ticket_type, qrCode, booking_id, ticket_number, ticket_id, venue, passTypeColors } = ticketData;
   
   try {
     const safeName = name || "Guest";
@@ -474,7 +474,7 @@ async function generateSingleTicketPage(doc, ticketData) {
         doc.fontSize(10)
            .fillColor('#666666')
            .font('Helvetica')
-           .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 50, yPos);
+           .text(`Booking ID: #${booking_id || 'N/A'} | Ticket ID: ${ticket_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 50, yPos);
 
         // Enhanced QR Code Section with clickable features - Better proportioned
         yPos += 25;
@@ -687,6 +687,7 @@ export const generateDandiyaTicketPDF = async (bookingData) => {
           qrCode: ticket.qrCode,
           booking_id: bookingData.id,
           ticket_number: ticket.ticket_number,
+          ticket_id: ticket.id,
           venue: bookingData.venue || 'Regal Lawns, Beed Bypass'
         }));
         
@@ -841,7 +842,7 @@ export const generateMultipleTicketsPDFBuffer = async (ticketsData) => {
 
 // Helper function to generate a single ticket on a specific page
 const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTickets) => {
-  const { name, date, pass_type, ticket_type, qrCode, booking_id, ticket_number, venue } = ticketData || {};
+  const { name, date, pass_type, ticket_type, qrCode, booking_id, ticket_number, ticket_id, venue } = ticketData || {};
 
   // Safe defaults
   const safeName = (name ?? "Guest").toString();
@@ -1043,7 +1044,7 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
   doc.fontSize(10)
      .fillColor('#666666')
      .font('Helvetica')
-     .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || ticketNumber}`, 55, yPos);
+     .text(`Booking ID: #${booking_id || 'N/A'} | Ticket ID: ${ticket_id || 'N/A'} | Ticket: ${ticket_number || ticketNumber}`, 55, yPos);
 
   // QR Code Section
   yPos += 30;

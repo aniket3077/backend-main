@@ -184,7 +184,7 @@ export const generateQRCode = async (text) => {
  */
 export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
   return new Promise(async (resolve, reject) => {
-    const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, ticket_type } = ticketData || {};
+    const { name, date, pass_type, qrCode, booking_id, ticket_number, ticket_id, venue, ticket_type } = ticketData || {};
 
     // Safe defaults
     const safeName = (name ?? "Guest").toString();
@@ -209,6 +209,7 @@ export const generateDandiyaTicketPDFBuffer = async (ticketData) => {
         qrCode,
         booking_id,
         ticket_number,
+        ticket_id,
         venue: safeVenue,
         passTypeColors
       });
@@ -262,7 +263,7 @@ export const generateMultiPageTicketPDF = async (ticketsData) => {
 
 // Helper function to generate a single ticket page
 async function generateSingleTicketPage(doc, ticketData) {
-  const { name, date, pass_type, qrCode, booking_id, ticket_number, venue, passTypeColors } = ticketData;
+  const { name, date, pass_type, qrCode, booking_id, ticket_number, ticket_id, venue, passTypeColors } = ticketData;
 
   try {
     const safeName = name || "Guest";
@@ -449,7 +450,7 @@ async function generateSingleTicketPage(doc, ticketData) {
     doc.fontSize(9)
       .fillColor('#666666')
       .font('Helvetica')
-      .text(`Booking ID: #${booking_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 45, yPos);
+      .text(`Booking ID: #${booking_id || 'N/A'} | Ticket ID: ${ticket_id || 'N/A'} | Ticket: ${ticket_number || '1'}`, 45, yPos);
 
     // QR Code Section - Made more compact
     yPos += 20;
@@ -482,7 +483,7 @@ async function generateSingleTicketPage(doc, ticketData) {
             qrBuffer = Buffer.from(response.data, 'binary');
           } catch (downloadErr) {
             console.warn('Failed to download QR code, generating new one:', downloadErr.message);
-            const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
+            const ticketNum = ticket_id || booking_id || ticket_number || 'TICKET-' + Date.now();
             qrBuffer = await generateQRCodeBuffer(ticketNum);
           }
 
@@ -497,7 +498,7 @@ async function generateSingleTicketPage(doc, ticketData) {
               qrBuffer = Buffer.from(base64Data, 'base64');
             } catch (imgErr) {
               console.warn('Invalid base64 QR data, generating new one');
-              const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
+              const ticketNum = ticket_id || booking_id || ticket_number || 'TICKET-' + Date.now();
               qrBuffer = await generateQRCodeBuffer(ticketNum);
             }
           } else {
@@ -507,7 +508,7 @@ async function generateSingleTicketPage(doc, ticketData) {
       } else {
         // Generate new QR code
         console.log('📱 No QR code provided, generating new one');
-        const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
+        const ticketNum = ticket_id || booking_id || ticket_number || 'TICKET-' + Date.now();
         qrBuffer = await generateQRCodeBuffer(ticketNum);
       }
 
@@ -703,6 +704,7 @@ export const generateDandiyaTicketPDF = async (bookingData) => {
           qrCode: ticket.qrCode,
           booking_id: bookingData.id,
           ticket_number: ticket.ticket_number,
+          ticket_id: ticket.id,
           venue: bookingData.venue || 'Regal Lawns, Beed Bypass'
         }));
 
@@ -857,7 +859,7 @@ export const generateMultipleTicketsPDFBuffer = async (ticketsData) => {
 
 // Helper function to generate a single ticket on a specific page
 const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTickets) => {
-  const { name, date, pass_type, qrCode, booking_id, ticket_number, venue } = ticketData || {};
+  const { name, date, pass_type, qrCode, booking_id, ticket_number, ticket_id, venue } = ticketData || {};
 
   // Safe defaults
   const safeName = (name ?? "Guest").toString();
@@ -1074,7 +1076,7 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
           qrBuffer = Buffer.from(response.data, 'binary');
         } catch (downloadErr) {
           console.warn('Failed to download QR code, generating new one:', downloadErr.message);
-          const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
+          const ticketNum = ticket_id || booking_id || ticket_number || 'TICKET-' + Date.now();
           qrBuffer = await generateQRCodeBuffer(ticketNum);
         }
 
@@ -1089,7 +1091,7 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
             qrBuffer = Buffer.from(base64Data, 'base64');
           } catch (imgErr) {
             console.warn('Invalid base64 QR data, generating new one');
-            const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
+            const ticketNum = ticket_id || booking_id || ticket_number || 'TICKET-' + Date.now();
             qrBuffer = await generateQRCodeBuffer(ticketNum);
           }
         } else {
@@ -1099,7 +1101,7 @@ const generateSingleTicketOnPage = async (doc, ticketData, ticketNumber, totalTi
     } else {
       // Generate new QR code
       console.log('📱 No QR code provided, generating new one');
-      const ticketNum = booking_id || ticket_number || 'TICKET-' + Date.now();
+      const ticketNum = ticket_id || booking_id || ticket_number || 'TICKET-' + Date.now();
       qrBuffer = await generateQRCodeBuffer(ticketNum);
     }
 
