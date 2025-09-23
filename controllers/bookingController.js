@@ -6,6 +6,14 @@ import whatsappService from "../services/whatsappService.js";
 import Razorpay from "razorpay";
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
+import { 
+  getCurrentISTDateString, 
+  formatDateForIndianLocale, 
+  getCurrentISTDate,
+  getDateString,
+  isSameDateIST,
+  getTimezoneInfo 
+} from '../utils/timezone.js';
 
 dotenv.config();
 
@@ -2085,32 +2093,23 @@ export const getQRDetails = async (req, res) => {
 
     const qrCode = ticketResult.rows[0];
     
-    // Get current date in YYYY-MM-DD format (server timezone)
-    const currentDate = new Date();
-    const currentDateString = currentDate.toISOString().slice(0, 10);
+    // Get current date in YYYY-MM-DD format using IST timezone utility
+    const currentDateString = getCurrentISTDateString();
     
-    // Get ticket's booked date in YYYY-MM-DD format
+    // Get ticket's booked date in YYYY-MM-DD format - convert to IST since DB stores UTC
     const ticketDate = new Date(qrCode.booking_date);
-    const ticketDateString = ticketDate.toISOString().slice(0, 10);
+    const ticketDateString = getDateString(ticketDate, true); // Convert to IST for comparison
     
-    console.log('🔍 Date validation:');
-    console.log('  Current date:', currentDateString);
+    console.log('🔍 Date validation (IST Timezone):');
+    console.log('  Current date (IST):', currentDateString);
     console.log('  Ticket date:', ticketDateString);
     console.log('  Dates match:', currentDateString === ticketDateString);
+    console.log('  Timezone info:', getTimezoneInfo());
     
     // Enhanced date validation - tickets only valid on their booked date
     if (currentDateString !== ticketDateString) {
-      const ticketDateFormatted = ticketDate.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric'
-      });
-      
-      const currentDateFormatted = currentDate.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric'
-      });
+      const ticketDateFormatted = formatDateForIndianLocale(ticketDate);
+      const currentDateFormatted = formatDateForIndianLocale(getCurrentISTDate());
       
       console.log('❌ Date validation failed:');
       console.log('  Ticket is for:', ticketDateFormatted);
@@ -2237,32 +2236,23 @@ export const markTicketUsed = async (req, res) => {
       });
     }
     
-    // Get current date in YYYY-MM-DD format (server timezone)
-    const currentDate = new Date();
-    const currentDateString = currentDate.toISOString().slice(0, 10);
+    // Get current date in YYYY-MM-DD format using IST timezone utility
+    const currentDateString = getCurrentISTDateString();
     
-    // Get ticket's booked date in YYYY-MM-DD format
+    // Get ticket's booked date in YYYY-MM-DD format - convert to IST since DB stores UTC
     const ticketDate = new Date(qrTicket.booking_date);
-    const ticketDateString = ticketDate.toISOString().slice(0, 10);
+    const ticketDateString = getDateString(ticketDate, true); // Convert to IST for comparison
     
-    console.log('🛠️ Date validation for ticket usage:');
-    console.log('  Current date:', currentDateString);
+    console.log('🛠️ Date validation for ticket usage (IST Timezone):');
+    console.log('  Current date (IST):', currentDateString);
     console.log('  Ticket date:', ticketDateString);
     console.log('  Dates match:', currentDateString === ticketDateString);
+    console.log('  Timezone info:', getTimezoneInfo());
     
     // Enhanced date validation - tickets can only be used on their booked date
     if (currentDateString !== ticketDateString) {
-      const ticketDateFormatted = ticketDate.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric'
-      });
-      
-      const currentDateFormatted = currentDate.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric'
-      });
+      const ticketDateFormatted = formatDateForIndianLocale(ticketDate);
+      const currentDateFormatted = formatDateForIndianLocale(getCurrentISTDate());
       
       console.log('❌ Date validation failed for ticket usage:');
       console.log('  Ticket is for:', ticketDateFormatted);

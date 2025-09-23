@@ -351,12 +351,37 @@ console.log("✅ Booking routes loaded");
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  res.json({ 
-    status: "healthy", 
-    message: "Dandiya Platform Backend is running",
-    timestamp: new Date().toISOString(),
-    node_env: process.env.NODE_ENV || 'development',
-    qr_pdf_fixed: true
+  // Import timezone utility
+  import('../utils/timezone.js').then(({ getTimezoneInfo }) => {
+    res.json({ 
+      status: "healthy", 
+      message: "Dandiya Platform Backend is running",
+      timestamp: new Date().toISOString(),
+      node_env: process.env.NODE_ENV || 'development',
+      qr_pdf_fixed: true,
+      timezone_info: getTimezoneInfo()
+    });
+  }).catch(() => {
+    // Fallback if timezone utility fails
+    const currentDate = new Date();
+    const istDate = new Date(currentDate.getTime() + (5.5 * 60 * 60 * 1000));
+    const currentDateString = istDate.getFullYear() + '-' + 
+      String(istDate.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(istDate.getDate()).padStart(2, '0');
+    
+    res.json({ 
+      status: "healthy", 
+      message: "Dandiya Platform Backend is running",
+      timestamp: new Date().toISOString(),
+      node_env: process.env.NODE_ENV || 'development',
+      qr_pdf_fixed: true,
+      timezone_info: {
+        utc_date: new Date().toISOString(),
+        ist_date: istDate.toISOString(),
+        current_date_string: currentDateString,
+        timezone_offset: "+05:30"
+      }
+    });
   });
 });
 
