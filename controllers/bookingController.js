@@ -22,23 +22,20 @@ dotenv.config();
  * Supports season pass, bulk discounts (6+ tickets = ₹350 each), and new pricing structure
  */
 
-// 🎉 Updated pricing structure for Malang Raas Dandiya 2025 - With Bulk Discount
-const TICKET_PRICING = {
-  // 🎟 Single Day Entry Tickets
+// 🎉 Regular pricing structure for Malang Raas Dandiya 2025
+const REGULAR_PRICING = {
   single: {
     female: { base: 399 },      // 👩 Female – ₹399
-    male: { base: 499 },        // 👨 Male – ₹499 (Stag Male Not Allowed)
+    male: { base: 499 },        // 👨 Male – ₹499
     couple: { base: 699 },      // 👫 Couple – ₹699
-    family: { base: 1300 },     // 👨‍👩‍👧‍👦 Family (4 members) – ₹1300
+    family: { base: 1300 },     // 👨‍👩‍👧‍👦 Family – ₹1300
     family4: { base: 1300 },    // Backward compatibility
-    kids: { base: 99 },         // 🧒 Kids (6 to 12 yrs) – ₹99
+    kids: { base: 99 },         // 🧒 Kids – ₹99
     kid: { base: 99 },          // Backward compatibility
-           // Group pricing same as female
   },
-  // 🔥 Season Pass Tickets (All 8 Days – Non-Stop Fun!)
   season: {
     female: { base: 2499 },     // 👩 Female Season – ₹2499
-    male: { base: 2999 },       // 👨 Male Season – ₹2999 (if allowed)
+    male: { base: 2999 },       // � Male Season – ₹2999
     couple: { base: 3499 },     // 👫 Couple Season – ₹3499
     family: { base: 5999 },     // 👨‍👩‍👧‍👦 Family Season – ₹5999
     kids: { base: 999 },        // 🧒 Kids Season – ₹999
@@ -46,9 +43,50 @@ const TICKET_PRICING = {
   }
 };
 
-// Calculate ticket price with bulk discount (6+ tickets = ₹350 each)
+// 🔥 DHAMAKA RATES for Sep 25-26 ONLY!
+const DHAMAKA_PRICING = {
+  single: {
+    female: { base: 99 },       // 👩 Female – ₹99 (DHAMAKA!)
+    male: { base: 199 },        // 👨 Male – ₹199 (DHAMAKA!)
+    couple: { base: 249 },      // 👫 Couple – ₹249 (DHAMAKA!)
+    family: { base: 499 },      // 👨‍👩‍👧‍👦 Family – ₹499 (DHAMAKA!)
+    family4: { base: 499 },     // Backward compatibility
+    kids: { base: 99 },         // 🧒 Kids – ₹99 (DHAMAKA!)
+    kid: { base: 99 },          // Backward compatibility
+  },
+  season: REGULAR_PRICING.season // Season passes keep regular pricing
+};
+
+// Helper function to check if date is September 25 or 26, 2025
+function isDhamakaSpecialDate(bookingDate) {
+  if (!bookingDate) return false;
+  
+  const date = new Date(bookingDate);
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0-based, so September = 8
+  const day = date.getDate();
+  
+  // Check if it's September 25 or 26, 2025
+  return year === 2025 && month === 8 && (day === 25 || day === 26);
+}
+
+// Get appropriate pricing based on date and ticket type
+function getTicketPricing(ticketType, bookingDate) {
+  const isDhamakaDate = isDhamakaSpecialDate(bookingDate);
+  
+  // Use dhamaka pricing only for daily tickets on Sep 25-26
+  if (isDhamakaDate && ticketType === 'single') {
+    return DHAMAKA_PRICING;
+  }
+  
+  return REGULAR_PRICING;
+}
+
+// Calculate ticket price - now with date-specific pricing for Sep 25-26
 function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = null) {
+  const TICKET_PRICING = getTicketPricing(ticketType, bookingDate);
   const pricing = TICKET_PRICING[ticketType]?.[passType];
+  
   if (!pricing) {
     throw new Error(`Invalid pricing for ${ticketType} ${passType}`);
   }
@@ -143,7 +181,8 @@ function computeTotalAmount(passType, quantity = 1, ticketType = 'single', booki
   const cleanPassType = passType.toLowerCase().trim();
   const cleanTicketType = (ticketType || 'single').toLowerCase().trim();
   
-  // Use the comprehensive pricing structure
+  // Get appropriate pricing based on date
+  const TICKET_PRICING = getTicketPricing(cleanTicketType, bookingDate);
   const pricing = TICKET_PRICING[cleanTicketType]?.[cleanPassType];
   if (!pricing) {
     console.error(`❌ Invalid pricing combination: ${cleanTicketType} ${cleanPassType}`);
@@ -460,6 +499,7 @@ export const createBooking = async (req, res) => {
           let passCalc;
           if (isBulkDiscount && (passType === 'male' || passType === 'female')) {
             // Apply bulk discount only to individual male/female tickets: ₹350 per ticket
+            const TICKET_PRICING = getTicketPricing(finalTicketType, bookingDate);
             const pricing = TICKET_PRICING[finalTicketType]?.[passType];
             const basePrice = pricing ? pricing.base : 0;
             
@@ -1059,7 +1099,7 @@ export const testWhatsApp = async (req, res) => {
     // Calculate dynamic amount based on pass type for test
     const testPassType = passType || 'female';
     const testPricing = calculateTicketPrice(testPassType, 'single', ticketCount, null);
-    const testAmount = testPricing ? `₹${testPricing.totalAmount}` : '₹399';
+    const testAmount = testPricing ? `₹${testPricing.totalAmount}` : '₹99';
     
     // Send single complete booking message (like the real booking flow)
     const result = await whatsappService.sendBookingConfirmation({
@@ -2375,9 +2415,9 @@ export const resendNotifications = async (req, res) => {
   }
 };
 
-// 8️⃣ Get Pricing Information (NEW)
+// 8️⃣ Get Pricing Information (NEW) - Now with date-specific pricing
 export const getPricingInfo = async (req, res) => {
-  const { pass_type, ticket_type = 'single', num_tickets = 1 } = req.query;
+  const { pass_type, ticket_type = 'single', num_tickets = 1, booking_date } = req.query;
 
   try {
     if (!pass_type) {
@@ -2387,7 +2427,9 @@ export const getPricingInfo = async (req, res) => {
       });
     }
 
-    const priceInfo = calculateTicketPrice(pass_type, ticket_type, parseInt(num_tickets), null);
+    // Use current date if no booking_date is provided
+    const dateToUse = booking_date || getCurrentISTDateString();
+    const priceInfo = calculateTicketPrice(pass_type, ticket_type, parseInt(num_tickets), dateToUse);
     
     // Format response for frontend
     const response = {
@@ -2492,22 +2534,22 @@ export const validatePricingConsistencyEndpoint = async (req, res) => {
     if (test_scenarios) {
       const testScenarios = [
         // Single Day Tickets - Normal scenarios
-        { pass_type: 'female', ticket_type: 'single', quantity: 1 },     // ₹399
-        { pass_type: 'female', ticket_type: 'single', quantity: 10 },    // ₹3990 (no bulk discount)
-        { pass_type: 'couple', ticket_type: 'single', quantity: 1 },     // ₹699  
-        { pass_type: 'family', ticket_type: 'single', quantity: 1 },     // ₹1300
+        { pass_type: 'female', ticket_type: 'single', quantity: 1 },     // ₹99
+        { pass_type: 'female', ticket_type: 'single', quantity: 10 },    // ₹990 (no bulk discount)
+        { pass_type: 'couple', ticket_type: 'single', quantity: 1 },     // ₹249  
+        { pass_type: 'family', ticket_type: 'single', quantity: 1 },     // ₹499
         { pass_type: 'kids', ticket_type: 'single', quantity: 1 },       // ₹99
-        { pass_type: 'male', ticket_type: 'single', quantity: 1 },       // ₹499 (Note: Stag not allowed)
+        { pass_type: 'male', ticket_type: 'single', quantity: 1 },       // ₹199
         
         // Season Pass Tickets - 8 Days
-        { pass_type: 'female', ticket_type: 'season', quantity: 1 },     // ₹2499
-        { pass_type: 'couple', ticket_type: 'season', quantity: 1 },     // ₹3499
-        { pass_type: 'family', ticket_type: 'season', quantity: 1 },     // ₹5999
+        { pass_type: 'female', ticket_type: 'season', quantity: 1 },     // ₹792
+        { pass_type: 'couple', ticket_type: 'season', quantity: 1 },     // ₹1992
+        { pass_type: 'family', ticket_type: 'season', quantity: 1 },     // ₹3992
         
         // Multiple quantity scenarios (fixed pricing)
-        { pass_type: 'female', ticket_type: 'single', quantity: 12 },    // ₹4788 (399*12)
-        { pass_type: 'couple', ticket_type: 'single', quantity: 6 },     // ₹4194 (699*6)
-        { pass_type: 'family', ticket_type: 'single', quantity: 4 }      // ₹5200 (1300*4)
+        { pass_type: 'female', ticket_type: 'single', quantity: 12 },    // ₹1188 (99*12)
+        { pass_type: 'couple', ticket_type: 'single', quantity: 6 },     // ₹1494 (249*6)
+        { pass_type: 'family', ticket_type: 'single', quantity: 4 }      // ₹1996 (499*4)
       ];
 
       for (const scenario of testScenarios) {
@@ -2550,17 +2592,24 @@ export const validatePricingConsistencyEndpoint = async (req, res) => {
       successful_validations: results.filter(r => r.validation_result?.isValid !== false && r.test_result !== 'FAILED' && r.test_result !== 'ERROR').length,
       failed_validations: results.filter(r => r.validation_result?.isValid === false || r.test_result === 'FAILED' || r.test_result === 'ERROR').length,
       pricing_structure: {
-        single_day_prices: {
+        regular_single_day_prices: {
           female: "₹399",
-          male: "₹499 (Stag Male Not Allowed)",
+          male: "₹499",
           couple: "₹699", 
-          family: "₹1300 (4 members)",
-          kids: "₹99 (6 to 12 yrs)"
+          family: "₹1300",
+          kids: "₹99"
+        },
+        dhamaka_prices_sep25_26: {
+          female: "₹99",
+          male: "₹199",
+          couple: "₹249", 
+          family: "₹499",
+          kids: "₹99"
         },
         season_pass_prices: {
           female: "₹2499 (8 Days)",
           couple: "₹3499 (8 Days)", 
-          family: "₹5999 (8 Days, 4 members)"
+          family: "₹5999 (8 Days)"
         },
         bulk_discounts: "Available for larger bookings"
       }
