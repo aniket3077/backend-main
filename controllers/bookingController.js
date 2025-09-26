@@ -30,53 +30,83 @@ const REGULAR_PRICING = {
     couple: { base: 699 },      // 👫 Couple – ₹699
     family: { base: 1300 },     // 👨‍👩‍👧‍👦 Family – ₹1300
     family4: { base: 1300 },    // Backward compatibility
-    kids: { base: 99 },         // 🧒 Kids – ₹99
-    kid: { base: 99 },          // Backward compatibility
   },
   season: {
     female: { base: 2499 },     // 👩 Female Season – ₹2499
     male: { base: 2999 },       // � Male Season – ₹2999
     couple: { base: 3499 },     // 👫 Couple Season – ₹3499
     family: { base: 5999 },     // 👨‍👩‍👧‍👦 Family Season – ₹5999
-    kids: { base: 999 },        // 🧒 Kids Season – ₹999
-    kid: { base: 999 },         // Backward compatibility
   }
 };
 
-// 🔥 DHAMAKA RATES for Sep 25-26 ONLY!
-const DHAMAKA_PRICING = {
+// 🔥 DHAMAKA RATES for Sep 27-28, 2025
+const DHAMAKA_PRICING_27_28 = {
   single: {
-    female: { base: 99 },       // 👩 Female – ₹99 (DHAMAKA!)
-    male: { base: 199 },        // 👨 Male – ₹199 (DHAMAKA!)
-    couple: { base: 249 },      // 👫 Couple – ₹249 (DHAMAKA!)
-    family: { base: 499 },      // 👨‍👩‍👧‍👦 Family – ₹499 (DHAMAKA!)
-    family4: { base: 499 },     // Backward compatibility
-    kids: { base: 99 },         // 🧒 Kids – ₹99 (DHAMAKA!)
-    kid: { base: 99 },          // Backward compatibility
+    female: { base: 249 },      // 👩 Female – ₹249 (DHAMAKA!)
+    male: { base: 299 },        // 👨 Male – ₹299 (DHAMAKA!)
+    couple: { base: 399 },      // 👫 Couple – ₹399 (DHAMAKA!)
+    family: { base: 749 },      // 👨‍👩‍👧‍👦 Family – ₹749 (DHAMAKA!)
+    family4: { base: 749 },     // Backward compatibility
   },
   season: REGULAR_PRICING.season // Season passes keep regular pricing
 };
 
-// Helper function to check if date is September 25 or 26, 2025
-function isDhamakaSpecialDate(bookingDate) {
-  if (!bookingDate) return false;
+// 🔥 DHAMAKA RATES for Sep 29-30, 2025
+const DHAMAKA_PRICING_29_30 = {
+  single: {
+    female: { base: 299 },      // 👩 Female – ₹299 (DHAMAKA!)
+    male: { base: 399 },        // 👨 Male – ₹399 (DHAMAKA!)
+    couple: { base: 499 },      // 👫 Couple – ₹499 (DHAMAKA!)
+    family: { base: 949 },      // 👨‍👩‍👧‍👦 Family – ₹949 (DHAMAKA!)
+    family4: { base: 949 },     // Backward compatibility
+  },
+  season: REGULAR_PRICING.season // Season passes keep regular pricing
+};
+
+// Helper function to check for new dhamaka special dates
+function getDhamakaDateType(bookingDate) {
+  if (!bookingDate) return null;
   
   const date = new Date(bookingDate);
   const year = date.getFullYear();
   const month = date.getMonth(); // 0-based, so September = 8
   const day = date.getDate();
   
-  // Check if it's September 25 or 26, 2025
-  return year === 2025 && month === 8 && (day === 25 || day === 26);
+  // Disable old dates (Sep 23-26)
+  if (year === 2025 && month === 8 && (day >= 23 && day <= 26)) {
+    return 'disabled';
+  }
+  
+  // Check for Sep 27-28, 2025
+  if (year === 2025 && month === 8 && (day === 27 || day === 28)) {
+    return 'dhamaka_27_28';
+  }
+  
+  // Check for Sep 29-30, 2025
+  if (year === 2025 && month === 8 && (day === 29 || day === 30)) {
+    return 'dhamaka_29_30';
+  }
+  
+  return null;
 }
 
 // Get appropriate pricing based on date and ticket type
 function getTicketPricing(ticketType, bookingDate) {
-  const isDhamakaDate = isDhamakaSpecialDate(bookingDate);
+  const dhamakaType = getDhamakaDateType(bookingDate);
   
-  // Use dhamaka pricing only for daily tickets on Sep 25-26
-  if (isDhamakaDate && ticketType === 'single') {
-    return DHAMAKA_PRICING;
+  // Disable bookings for old dates
+  if (dhamakaType === 'disabled') {
+    throw new Error('Bookings are no longer available for this date');
+  }
+  
+  // Use appropriate dhamaka pricing for daily tickets
+  if (ticketType === 'single') {
+    if (dhamakaType === 'dhamaka_27_28') {
+      return DHAMAKA_PRICING_27_28;
+    }
+    if (dhamakaType === 'dhamaka_29_30') {
+      return DHAMAKA_PRICING_29_30;
+    }
   }
   
   return REGULAR_PRICING;
@@ -94,46 +124,18 @@ function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = nu
   const quantity = Math.max(1, parseInt(numTickets));
   const basePrice = pricing.base;
   
-  // � September 23rd Special Pricing
-  const isSeptember23 = (() => {
-    if (!bookingDate) return false;
-    
-    // Handle date-only format (2025-09-23)
-    if (typeof bookingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(bookingDate)) {
-      return bookingDate === '2025-09-23';
-    }
-    
-    // Handle datetime format with UTC conversion
-    const date = new Date(bookingDate);
-    return date.toISOString().slice(0, 10) === '2025-09-23';
-  })();
+  // No special discounts or bulk pricing - use base prices only
+  const finalPricePerTicket = basePrice;
+  const discountApplied = false;
+  const discountAmount = 0;
   
-  let finalPricePerTicket = basePrice;
-  let discountApplied = false;
-  let discountAmount = 0;
-  
-  if (isSeptember23 && ticketType === 'single') {
-    if (passType === 'female') {
-      // Female tickets are ₹1 on September 23rd
-      finalPricePerTicket = 1;
-      discountApplied = true;
-      discountAmount = (basePrice - 1) * quantity;
-    } else if (passType === 'couple') {
-      // Couple tickets are ₹249 on September 23rd
-      finalPricePerTicket = 249;
-      discountApplied = true;
-      discountAmount = (basePrice - 249) * quantity;
-    } else if (passType === 'male') {
-      // Male tickets are ₹249 on September 23rd
-      finalPricePerTicket = 249;
-      discountApplied = true;
-      discountAmount = (basePrice - 249) * quantity;
-    }
-  } else if (quantity >= 6) {
-    // 🎯 Bulk discount: 6+ tickets = ₹350 each (only when not September 23rd special pricing)
-    finalPricePerTicket = 350;
-    discountApplied = true;
-    discountAmount = (basePrice - 350) * quantity;
+  // Check for special dhamaka dates for messaging
+  const dhamakaType = getDhamakaDateType(bookingDate);
+  let specialOfferMessage = null;
+  if (dhamakaType === 'dhamaka_27_28') {
+    specialOfferMessage = 'Dhamaka Rates Sep 27-28';
+  } else if (dhamakaType === 'dhamaka_29_30') {
+    specialOfferMessage = 'Dhamaka Rates Sep 29-30';
   }
   
   const totalAmount = finalPricePerTicket * quantity;
@@ -147,7 +149,7 @@ function calculateTicketPrice(passType, ticketType, numTickets, bookingDate = nu
     totalAmount: totalAmount,
     savings: savings,
     discountAmount: discountAmount,
-    specialOffer: isSeptember23 ? 'September 23rd Special' : null
+    specialOffer: specialOfferMessage
   };
 }
 
@@ -282,7 +284,7 @@ export const createBooking = async (req, res) => {
         bulkDiscountEligibleTickets += passCount;
         console.log(`✅ Individual ${passType} tickets count for bulk discount: +${passCount}`);
       } else {
-        // Regular tickets (kids, etc.) - add to existing count but don't count for bulk discount
+        // Regular tickets - add to existing count but don't count for bulk discount
         bookingPasses[passType] = (bookingPasses[passType] || 0) + passCount;
       }
     }
@@ -407,26 +409,17 @@ export const createBooking = async (req, res) => {
   console.log(`🎯 Final ticket type: ${finalTicketType} (respecting user choice - no auto-conversion)`);
 
   // �🎟️ NEW TICKET PURCHASE VALIDATION RULES
-  // Check if male or kid tickets are being purchased alone (not allowed)
+  // Check if male tickets are being purchased alone (not allowed)
   if (passes && typeof passes === 'object') {
     // New format: multiple pass types
     const passTypes = Object.keys(passes).filter(key => passes[key] > 0);
     const hasOnlyMale = passTypes.length === 1 && passTypes[0] === 'male';
-    const hasOnlyKid = passTypes.length === 1 && (passTypes[0] === 'kids' || passTypes[0] === 'kid');
     
     if (hasOnlyMale) {
       return res.status(400).json({
         success: false,
         error: "Invalid ticket selection",
         message: "❌ Stag Male entries are not allowed. Male tickets must be purchased with other ticket types (couple, family, etc.)."
-      });
-    }
-    
-    if (hasOnlyKid) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid ticket selection", 
-        message: "❌ Kid tickets cannot be purchased alone. Please add other ticket types."
       });
     }
   } else if (pass_type) {
@@ -439,13 +432,7 @@ export const createBooking = async (req, res) => {
       });
     }
     
-    if (pass_type === 'kids' || pass_type === 'kid') {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid ticket selection",
-        message: "❌ Kid tickets cannot be purchased alone. Please add other ticket types."
-      });
-    }
+
   }
   
   try {
@@ -1505,9 +1492,9 @@ export const confirmPayment = async (req, res) => {
         
         // Build array of individual pass types based on expanded passes (not original)
         // This handles couple/family ticket expansion properly
-        // Sort entries to ensure consistent order: male, female, kids, etc.
+        // Sort entries to ensure consistent order: male, female, couple, family, etc.
         const sortedEntries = Object.entries(expandedPasses).sort(([a], [b]) => {
-          const order = ['male', 'female', 'kids', 'kid', 'couple', 'family', 'family4'];
+          const order = ['male', 'female', 'couple', 'family', 'family4'];
           const aIndex = order.indexOf(a);
           const bIndex = order.indexOf(b);
           if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
@@ -1549,7 +1536,7 @@ export const confirmPayment = async (req, res) => {
                 individualPassTypes.push('female');
               }
             } else {
-              // Regular tickets (male, female, kids, etc.)
+              // Regular tickets (male, female, couple, family, etc.)
               for (let j = 0; j < passCount; j++) {
                 individualPassTypes.push(passType);
               }
@@ -1816,7 +1803,7 @@ async function sendTicketNotifications(booking_id, payment_id) {
                 // Build array of pass types in order
                 const passList = [];
                 const sortedEntries = Object.entries(expandedPasses).sort(([a], [b]) => {
-                  const order = ['male', 'female', 'kids', 'kid', 'couple', 'family', 'family4'];
+                  const order = ['male', 'female', 'couple', 'family', 'family4'];
                   const aIndex = order.indexOf(a);
                   const bIndex = order.indexOf(b);
                   if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
@@ -2538,7 +2525,6 @@ export const validatePricingConsistencyEndpoint = async (req, res) => {
         { pass_type: 'female', ticket_type: 'single', quantity: 10 },    // ₹990 (no bulk discount)
         { pass_type: 'couple', ticket_type: 'single', quantity: 1 },     // ₹249  
         { pass_type: 'family', ticket_type: 'single', quantity: 1 },     // ₹499
-        { pass_type: 'kids', ticket_type: 'single', quantity: 1 },       // ₹99
         { pass_type: 'male', ticket_type: 'single', quantity: 1 },       // ₹199
         
         // Season Pass Tickets - 8 Days
@@ -2603,8 +2589,7 @@ export const validatePricingConsistencyEndpoint = async (req, res) => {
           female: "₹99",
           male: "₹199",
           couple: "₹249", 
-          family: "₹499",
-          kids: "₹99"
+          family: "₹499"
         },
         season_pass_prices: {
           female: "₹2499 (8 Days)",

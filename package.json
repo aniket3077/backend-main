@@ -33,6 +33,7 @@
     "form-data": "^4.0.4",
     "fs": "^0.0.1-security",
     "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.5",
     "pdfkit": "^0.17.1",
     "pg": "^8.16.3",
@@ -44,5 +45,13 @@
     "twilio": "^5.9.0",
     "uuid": "^13.0.0",
     "whatsapp-web.js": "^1.33.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aniket3077/backend-main.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aniket3077/backend-main/issues"
+  },
+  "homepage": "https://github.com/aniket3077/backend-main#readme"
 }
